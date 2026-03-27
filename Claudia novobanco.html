@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claudia novobanco — WFM Dimensionamiento</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:ital,opsz,wght@0,6..12,400;0,6..12,600;0,6..12,700;0,6..12,800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+    <div class="app-shell">
+
+        <!-- ── Header ─────────────────────────────────────────────── -->
+        <header class="app-header">
+            <div class="logo">novo<span>banco</span></div>
+            <div class="header-sep"></div>
+            <div>
+                <div class="header-appname">Claudia WFM</div>
+                <div class="header-subtitle">Dimensionamiento · Erlang C</div>
+            </div>
+            <div class="header-author">PAX Servinform · v1.0</div>
+        </header>
+
+        <div class="app-body">
+
+            <!-- ── Sidebar ─────────────────────────────────────────── -->
+            <nav class="sidebar" id="sidebar"></nav>
+
+            <!-- ── Contenido principal ─────────────────────────────── -->
+            <main class="main-content" id="mainContent"></main>
+
+        </div>
+    </div>
+
+    <!-- ── Progress overlay ────────────────────────────────────────── -->
+    <div class="progress-overlay" id="progressOverlay">
+        <div class="progress-box">
+            <h3>Procesando...</h3>
+            <div class="progress-bar-track">
+                <div class="progress-bar-fill"></div>
+            </div>
+            <div class="progress-status">Iniciando...</div>
+        </div>
+    </div>
+
+    <!-- ── Librerías externas (CDN) ────────────────────────────────── -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+    <!-- ── Módulos de la aplicación (orden: dependencias primero) ───── -->
+    <script src="js/state.js"></script>
+    <script src="js/config.js"></script>
+    <script src="js/utils.js"></script>
+    <script src="js/profiles.js"></script>
+    <script src="js/parser.js"></script>
+    <script src="js/forecast.js"></script>
+    <script src="js/ui.js"></script>
+
+    <!-- ── Bootstrap ────────────────────────────────────────────────── -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            // Restaurar estado guardado si existe (incluye perfiles)
+            restaurarEstado();
+            cargarPerfiles();
+            // Montar la interfaz
+            initUI();
+        });
+    </script>
+
+</body>
+</html>
