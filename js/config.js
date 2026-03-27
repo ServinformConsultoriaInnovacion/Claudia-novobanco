@@ -17,8 +17,7 @@ const CONVENIO_META = {
     pausa46:        { label: 'Pausa obligatoria 4–6 h',          unidad: 'min',   ref: 'Art. 24' },
     pausa68:        { label: 'Pausa obligatoria 6–8 h',          unidad: 'min',   ref: 'Art. 24' },
     vacaciones:     { label: 'Vacaciones',                       unidad: 'días laborables', ref: 'Art. 29' },
-    pvdShrinkage:   { label: 'Shrinkage PVD',                    unidad: '%',     ref: 'Art. 57' },
-    rotacionFDS:    { label: 'Rotación FDS por defecto',         unidad: '%',     ref: '—' }
+    pvdShrinkage:   { label: 'Shrinkage PVD',                    unidad: '%',     ref: 'Art. 57' }
 };
 
 /** Tipo de input por campo del convenio */
@@ -26,13 +25,12 @@ const CONVENIO_INPUT_TYPE = {
     jornadaAnual: 'number', jornadaSemanal: 'number', maxIrregular: 'number',
     maxConsec7D:  'number', maxConsecNF:    'number', descanso14d:  'number',
     fdsLibresMin: 'number', pausa46:        'number', pausa68:      'number',
-    vacaciones:   'number', pvdShrinkage:   'number', rotacionFDS:  'number'
+    vacaciones:   'number', pvdShrinkage:   'number'
 };
 
 /** Step por campo del convenio (para input[type=number]) */
 const CONVENIO_STEP = {
-    pvdShrinkage: 0.1,
-    rotacionFDS:  0.1
+    pvdShrinkage: 0.1
 };
 
 /** Opciones de modalidad de servicio */
@@ -60,8 +58,7 @@ const PRESET_CONVENIO_ES_CC = {
     pausa46:        { valor: 10,    noAplica: false },
     pausa68:        { valor: 20,    noAplica: false },
     vacaciones:     { valor: 23,    noAplica: false },
-    pvdShrinkage:   { valor: 16.7,  noAplica: false },
-    rotacionFDS:    { valor: 33,    noAplica: false }
+    pvdShrinkage:   { valor: 16.7,  noAplica: false }
 };
 
 /** Devuelve el valor activo del convenio o null si no aplica */

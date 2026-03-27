@@ -32,9 +32,10 @@ const State = {
         pausa68:        { valor: 20,    noAplica: false },
         vacaciones:     { valor: 23,    noAplica: false },
         pvdShrinkage:   { valor: 16.7,  noAplica: false },
-        rotacionFDS:    { valor: 33,    noAplica: false },
-        camposLibres:   []    // [{ nombre, valor, noAplica, rol }]
-                              // rol: 'info' | 'shrinkage' | 'reduccion_jornada' | 'ocupacion_max'
+        camposLibres:   [     // [{ nombre, valor, noAplica, rol }]
+            // rol: 'info' | 'shrinkage' | 'reduccion_jornada' | 'ocupacion_max'
+            { nombre: 'Rotación FDS por defecto', valor: 33, noAplica: true, rol: 'info' }
+        ]
     },
 
     // ── A3. Perfiles de configuración guardados ───────────────────────────
@@ -155,6 +156,28 @@ function _normalizarServicio(svc) {
     return svc;
 }
 
+/**
+ * Campos libres predefinidos por defecto.
+ * Se añaden si no existen ya (por nombre) tras restaurar el estado,
+ * sin destruir los campos libres que el usuario haya configurado.
+ */
+var _CAMPOS_LIBRES_DEFECTO = [
+    { nombre: 'Rotación FDS por defecto', valor: 33, noAplica: true, rol: 'info' }
+];
+
+function _sembrarCamposLibresDefecto() {
+    _CAMPOS_LIBRES_DEFECTO.forEach(function(d) {
+        var existe = State.convenio.camposLibres.some(function(c) {
+            return c.nombre === d.nombre;
+        });
+        if (!existe) {
+            State.convenio.camposLibres.push(
+                { nombre: d.nombre, valor: d.valor, noAplica: d.noAplica, rol: d.rol }
+            );
+        }
+    });
+}
+
 function restaurarEstado() {
     try {
         const raw = localStorage.getItem(LS_STATE_KEY);
@@ -173,6 +196,8 @@ function restaurarEstado() {
         if (saved.dimensionamiento && saved.dimensionamiento.shrinkageMensual) {
             State.dimensionamiento.shrinkageMensual = saved.dimensionamiento.shrinkageMensual;
         }
+        // Añadir campos libres predefinidos que falten (migración no destructiva)
+        _sembrarCamposLibresDefecto();
         return true;
     } catch (e) {
         console.warn('[State] Error al restaurar estado:', e);
