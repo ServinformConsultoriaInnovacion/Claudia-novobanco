@@ -134,6 +134,8 @@ function renderModuloStaff(container) {
     acciones.appendChild(crearBtn('Añadir agente', 'btn-secondary btn-sm', '➕', _stAgregarFila));
     container.appendChild(acciones);
 
+    // Recalcular activos ANTES de pintar stats (datos pueden venir de localStorage)
+    _stRecalcActivos();
     _stActualizar();
 
     if (!_stPasteRegistrado) {
@@ -155,8 +157,7 @@ function renderModuloStaff(container) {
         });
         _stKeyRegistrado = true;
     }
-    // Recalcular activos al abrir (los datos pueden venir de localStorage)
-    _stRecalcActivos();
+    // (activos ya recalculados antes de _stActualizar arriba)
 
     // Ajustar top de la fila sticky de filtros al alto real de la cabecera
     requestAnimationFrame(function() {
@@ -372,8 +373,16 @@ function _stRenderStats(container) {
         '<div class="stat-label">Ausentes / IT</div>' +
         '<div class="stat-value">' + (todos.length - activos.length) + '</div></div>';
 
+    var normSvcNombre = function(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim(); };
     State.config.servicios.forEach(function(svc) {
-        var n = activos.filter(function(a) { return a.servicioId === svc.id; }).length;
+        var svcNorm = normSvcNombre(svc.nombre);
+        var n = activos.filter(function(a) {
+            // Comparar por id (caso normal) o por nombre normalizado (fallback cuando el Excel
+            // no tenía los servicios configurados aún y guardó el nombre como servicioId)
+            return a.servicioId === svc.id ||
+                   normSvcNombre(a.servicio) === svcNorm ||
+                   normSvcNombre(a.servicioId) === svcNorm;
+        }).length;
         html += '<div class="stat-card" style="border-left:3px solid ' + svc.color + ';">' +
             '<div class="stat-label">' + _stEsc(svc.nombre) + '</div>' +
             '<div class="stat-value">' + n + '</div></div>';
@@ -905,9 +914,23 @@ function _stEliminarFila(realIdx) {
 
 function _stRecalcActivos() {
     var inactivo = ['IT', 'MAT', 'PAT', 'LACT', 'EXC', 'PR', 'P.DTO'];
+
+    // Re-resolver servicioId para agentes que llegaron del localStorage con el nombre crudo
+    State.staff.todos.forEach(function(a) {
+        if (a.servicioId && !a.servicioId.startsWith('svc_')) {
+            // Buscar si hay un servicio configurado que coincida por nombre o por id
+            var found = State.config.servicios.find(function(s) {
+                return s.id === a.servicioId ||
+                       _norm(s.nombre) === _norm(a.servicioId) ||
+                       _norm(s.nombre) === _norm(a.servicio || '');
+            });
+            if (found) a.servicioId = found.id;
+        }
+    });
+
     State.staff.activos = State.staff.todos.filter(function(a) {
         var est = (a.estado || '').toUpperCase();
-        return est !== 'IT' && !inactivo.includes(est);
+        return !inactivo.includes(est);
     });
 }
 
