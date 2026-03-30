@@ -125,14 +125,23 @@ function _renderSidebar() {
     });
     sidebar.appendChild(navDiv);
 
-    // ── Footer ───────────────────────────────────────────────────────────
+    // ── Footer + botón colapsar ─────────────────────────────────────
     const footer = document.createElement('div');
     footer.className = 'sidebar-footer';
     footer.innerHTML =
         '<span style="color:var(--nb-primary);font-weight:800;">novo</span>' +
         '<span style="color:var(--nb-dark);font-weight:800;">banco</span> WFM v1.0<br>' +
         'PAX Servinform · 2026';
+
+    const btnToggle = document.createElement('button');
+    btnToggle.id        = 'btnToggleSidebar';
+    btnToggle.className = 'sidebar-toggle';
+    btnToggle.title     = 'Colapsar / expandir barra lateral';
+    btnToggle.innerHTML = '◄';
+    btnToggle.addEventListener('click', toggleSidebar);
+
     sidebar.appendChild(footer);
+    sidebar.appendChild(btnToggle);
 }
 
 // ── Actualiza sólo los nav-items activos sin re-renderizar todo ──────────
@@ -143,7 +152,15 @@ function _actualizarNav() {
         if (lbl) lbl.style.color = el.classList.contains('active') ? 'var(--nb-primary-dark)' : '';
     });
 }
+// ── Sidebar collapse ──────────────────────────────────────────────────
 
+function toggleSidebar() {
+    var sidebar = document.getElementById('sidebar');
+    var btn     = document.getElementById('btnToggleSidebar');
+    sidebar.classList.toggle('collapsed');
+    var collapsed = sidebar.classList.contains('collapsed');
+    if (btn) btn.innerHTML = collapsed ? '►' : '◄';
+}
 // ══════════════════════════════════════════════════════════════════════════
 //  ROUTING DE PANELES
 // ══════════════════════════════════════════════════════════════════════════

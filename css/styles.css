@@ -76,7 +76,7 @@ html, body {
 /* ── Body Layout ──────────────────────────────────────────────── */
 .app-body { display: flex; flex: 1; overflow: hidden; }
 
-/* ── Sidebar ──────────────────────────────────────────────────── */
+/* ── Sidebar ──────────────────────────────────────────── */
 .sidebar {
   width: var(--sidebar-w);
   background: var(--nb-white);
@@ -85,7 +85,43 @@ html, body {
   flex-direction: column;
   overflow-y: auto;
   flex-shrink: 0;
+  transition: width 0.2s ease;
+  position: relative;
 }
+
+/* Estado colapsado */
+.sidebar.collapsed {
+  width: 44px;
+  overflow: hidden;
+}
+.sidebar.collapsed .sidebar-project,
+.sidebar.collapsed .sidebar-section-title,
+.sidebar.collapsed .nav-texts,
+.sidebar.collapsed .nav-badge,
+.sidebar.collapsed .sidebar-footer { display: none; }
+.sidebar.collapsed .nav-item {
+  justify-content: center;
+  padding: 10px 0;
+  border-left-width: 0;
+  border-bottom: 1px solid var(--nb-border);
+}
+.sidebar.collapsed .nav-item .nav-icon { font-size: 18px; }
+
+/* Botón de colapso */
+.sidebar-toggle {
+  display: block;
+  width: 100%;
+  padding: 7px 0;
+  background: var(--nb-grey-bg);
+  border: none;
+  border-top: 1px solid var(--nb-border);
+  color: var(--nb-text-light);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: center;
+  transition: background 0.15s;
+}
+.sidebar-toggle:hover { background: var(--nb-primary-light); color: var(--nb-primary); }
 .sidebar-project {
   padding: 14px 14px 12px;
   border-bottom: 1px solid var(--nb-border);
@@ -533,11 +569,11 @@ table.staff-table th { padding: 6px 8px; font-size: 10px; }
 table.staff-table td { padding: 3px 6px; }
 table.staff-table tr:hover td { background: var(--nb-primary-light); }
 
-/* Celda seleccionada como origen de paste */
+/* Celdas seleccionadas (rango) */
 table.staff-table td.st-sel {
   outline: 2px solid var(--nb-primary);
   outline-offset: -2px;
-  background: var(--nb-primary-light) !important;
+  background: rgba(59,179,154,.15) !important;
 }
 
 /* Celda en modo edición */
@@ -546,6 +582,63 @@ table.staff-table td:has(select) {
   padding: 0;
   background: var(--nb-white) !important;
 }
+
+/* Icono de advertencia */
+.st-warn-icon { cursor: help; font-size: 12px; }
+
+/* Fila de filtros de columna */
+tr.st-filter-row th {
+  padding: 3px 4px;
+  background: #F0F4F3;
+  border-bottom: 2px solid var(--nb-border);
+}
+.st-col-filter {
+  width: 100%;
+  padding: 2px 4px;
+  font-size: 10px;
+  border: 1px solid var(--nb-border);
+  border-radius: 3px;
+  background: var(--nb-white);
+  font-family: inherit;
+  box-sizing: border-box;
+  min-width: 40px;
+  max-width: 100%;
+}
+.st-col-filter:focus {
+  outline: none;
+  border-color: var(--nb-primary);
+}
+
+/* Toolbar compacta de staff */
+.st-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0 10px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--nb-border);
+  margin-bottom: 14px;
+}
+.st-toolbar-btn {
+  white-space: nowrap;
+  cursor: pointer;
+}
+.st-toolbar.drag-over {
+  background: var(--nb-primary-light);
+  border-radius: 6px;
+}
+
+/* Botón iconógrafo genérico */
+.btn-icon {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--nb-text-light);
+  font-size: 11px;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+.btn-icon:hover { background: var(--nb-grey-bg); color: var(--nb-red); }
 
 kbd {
   background: var(--nb-grey-bg);

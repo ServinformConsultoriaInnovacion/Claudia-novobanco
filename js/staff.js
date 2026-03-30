@@ -13,11 +13,30 @@
 
 // ── Constantes ────────────────────────────────────────────────────────────
 
-// Valores reales extraídos del Excel de novobanco
-var STAFF_TURNOS         = ['ROTATIVO', 'ROTATIVO X 3', 'ROTATIVO X 4', 'PARTIDO', 'PARTIDO IRR 31h', 'IRR 25h', 'IRR 28h'];
-var STAFF_DISPONIBILIDADES = ['NF', '7D'];
-var STAFF_ESTADOS        = ['ACTIVO', 'IT', 'MAT', 'PAT', 'LACT', 'P.DTO', 'PR', 'EXC'];
-var STAFF_SEDES          = ['TORREJON', 'VALLADOLID'];
+// Turnos reales del Excel de novobanco + turnos fijos estándar
+var STAFF_TURNOS = [
+    'FIJO', 'FIJO MAÑANA', 'FIJO TARDE', 'FIJO NOCHE',
+    'ROTATIVO', 'ROTATIVO X 3', 'ROTATIVO X 4',
+    'PARTIDO', 'PARTIDO IRR 31h', 'IRR 25h', 'IRR 28h'
+];
+var STAFF_DISPONIBILIDADES  = ['NF', '7D'];
+var STAFF_ESTADOS           = ['ACTIVO', 'IT', 'MAT', 'PAT', 'LACT', 'P.DTO', 'PR', 'EXC'];
+var STAFF_SEDES             = ['TORREJON', 'VALLADOLID'];
+
+// Opciones para datalists de hora
+var STAFF_HORAS_DIA = [
+    '06:00','07:00','07:30','07:48','08:00','09:00','10:00','11:00',
+    '12:00','13:00','14:00','15:00','16:00','17:00','18:00',
+    '19:00','20:00','21:00','22:00','23:00'
+];
+var STAFF_HORAS_JORNADA = ['07:00','07:30','07:48','08:00','09:00'];
+var STAFF_HORARIOS_PARTIDO = [
+    '09:00-14:00/15:00-18:00',
+    '09:00-14:00/16:00-18:00',
+    '09:00-15:00/16:00-18:00',
+    '10:00-14:00/16:00-19:00',
+    '08:00-13:00/15:00-18:00'
+];
 
 /**
  * Definición de columnas.
@@ -29,17 +48,17 @@ var STAFF_COLS = [
     { key: 'servicio',       label: 'Servicio',          grupo: 'Identificación', tipo: 'svc',    req: false, w: 150 },
     { key: 'sede',           label: 'SEDE',              grupo: 'Identificación', tipo: 'tlist',  req: false, w: 110, opts: STAFF_SEDES },
     // ── Turno
-    { key: 'horas',          label: 'HORAS',             grupo: 'Turno',          tipo: 'text',   req: false, w: 75  },
+    { key: 'horas',          label: 'HORAS',             grupo: 'Turno',          tipo: 'tlist',  req: false, w: 75,  opts: STAFF_HORAS_JORNADA },
     { key: 'tipoTurno',      label: 'TIPO TURNO',        grupo: 'Turno',          tipo: 'tlist',  req: false, w: 140, opts: STAFF_TURNOS },
-    { key: 'inicioTurno',    label: 'INICIO TURNO',      grupo: 'Turno',          tipo: 'text',   req: false, w: 95  },
-    { key: 'finTurno',       label: 'FIN DE TURNO',      grupo: 'Turno',          tipo: 'text',   req: false, w: 95  },
-    { key: 'inicioTurno2',   label: 'INICIO TURNO 2',    grupo: 'Turno',          tipo: 'text',   req: false, w: 95  },
-    { key: 'finTurno2',      label: 'FIN TURNO 2',       grupo: 'Turno',          tipo: 'text',   req: false, w: 95  },
-    { key: 'inicioTurno3',   label: 'INICIO TURNO 3',    grupo: 'Turno',          tipo: 'text',   req: false, w: 95  },
-    { key: 'finTurno3',      label: 'FIN TURNO 3',       grupo: 'Turno',          tipo: 'text',   req: false, w: 95  },
-    { key: 'inicioTurno4',   label: 'INICIO TURNO 4',    grupo: 'Turno',          tipo: 'text',   req: false, w: 95  },
-    { key: 'finTurno4',      label: 'FIN TURNO 4',       grupo: 'Turno',          tipo: 'text',   req: false, w: 95  },
-    { key: 'horarioPartido', label: 'HORARIO PARTIDO',   grupo: 'Turno',          tipo: 'text',   req: false, w: 200 },
+    { key: 'inicioTurno',    label: 'INICIO TURNO',      grupo: 'Turno',          tipo: 'tlist',  req: false, w: 95,  opts: STAFF_HORAS_DIA },
+    { key: 'finTurno',       label: 'FIN DE TURNO',      grupo: 'Turno',          tipo: 'tlist',  req: false, w: 95,  opts: STAFF_HORAS_DIA },
+    { key: 'inicioTurno2',   label: 'INICIO TURNO 2',    grupo: 'Turno',          tipo: 'tlist',  req: false, w: 95,  opts: STAFF_HORAS_DIA },
+    { key: 'finTurno2',      label: 'FIN TURNO 2',       grupo: 'Turno',          tipo: 'tlist',  req: false, w: 95,  opts: STAFF_HORAS_DIA },
+    { key: 'inicioTurno3',   label: 'INICIO TURNO 3',    grupo: 'Turno',          tipo: 'tlist',  req: false, w: 95,  opts: STAFF_HORAS_DIA },
+    { key: 'finTurno3',      label: 'FIN TURNO 3',       grupo: 'Turno',          tipo: 'tlist',  req: false, w: 95,  opts: STAFF_HORAS_DIA },
+    { key: 'inicioTurno4',   label: 'INICIO TURNO 4',    grupo: 'Turno',          tipo: 'tlist',  req: false, w: 95,  opts: STAFF_HORAS_DIA },
+    { key: 'finTurno4',      label: 'FIN TURNO 4',       grupo: 'Turno',          tipo: 'tlist',  req: false, w: 95,  opts: STAFF_HORAS_DIA },
+    { key: 'horarioPartido', label: 'HORARIO PARTIDO',   grupo: 'Turno',          tipo: 'tlist',  req: false, w: 200, opts: STAFF_HORARIOS_PARTIDO },
     // ── Disponibilidad
     { key: 'disponibilidad', label: 'DISPONIBILIDAD',    grupo: 'Disponibilidad', tipo: 'select', req: false, w: 115, opts: STAFF_DISPONIBILIDADES },
     { key: 'estado',         label: 'ESTADO',            grupo: 'Disponibilidad', tipo: 'select', req: false, w: 100, opts: STAFF_ESTADOS },
@@ -71,10 +90,14 @@ var STAFF_COLS = [
 
 // ── Estado interno del módulo ─────────────────────────────────────────────
 
-var _stFiltroSvc    = '';     // '' = todos
-var _stFiltroEstado = '';     // '' = todos
-var _stSelOrigen    = null;   // { rowIdx, colIdx } — celda de inicio para paste
+var _stFiltroSvc       = '';       // '' = todos
+var _stFiltroEstado    = '';       // '' = todos
+var _stFiltrosCol      = {};       // { colKey: valorFiltro }
+var _stSelOrigen       = null;     // { rowIdx, colIdx } — celda inicio de rango
+var _stSelRango        = null;     // { r1, c1, r2, c2 }
+var _stHistorial       = [];       // undo stack para Ctrl+Z
 var _stPasteRegistrado = false;
+var _stKeyRegistrado   = false;
 
 // ── Entry point ───────────────────────────────────────────────────────────
 
@@ -85,7 +108,7 @@ var _stPasteRegistrado = false;
 function renderModuloStaff(container) {
     container.innerHTML = '';
 
-    container.appendChild(_stRenderCarga());
+    container.appendChild(_stRenderToolbar());
 
     var filtros = _stRenderFiltros();
     container.appendChild(filtros);
@@ -114,75 +137,75 @@ function renderModuloStaff(container) {
         document.addEventListener('paste', _stOnPaste);
         _stPasteRegistrado = true;
     }
+    if (!_stKeyRegistrado) {
+        document.addEventListener('keydown', function(e) {
+            if (e.ctrlKey && (e.key === 'z' || e.key === 'Z') && document.getElementById('stTabla')) {
+                _stUndo();
+                e.preventDefault();
+            }
+        });
+        _stKeyRegistrado = true;
+    }
 }
 
 // ── Panel de carga ────────────────────────────────────────────────────────
 
-function _stRenderCarga() {
-    var panel = document.createElement('div');
-    panel.className = 'panel';
+// ── Barra de herramientas compacta (sustituye al panel desplegable) ────────
 
-    panel.innerHTML =
-        '<div class="panel-header" onclick="togglePanel(this)">' +
-            '<span class="panel-icon">📁</span>' +
-            '<h2>Carga de plantilla</h2>' +
-            '<span class="panel-desc">Sube la hoja STAFF del Excel o edita directamente</span>' +
-            '<span class="panel-toggle">▼</span>' +
-        '</div>' +
-        '<div class="panel-body">' +
-            '<div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;">' +
+function _stRenderToolbar() {
+    var bar = document.createElement('div');
+    bar.className = 'st-toolbar';
 
-                // Zona de drop
-                '<div id="stUploadZone" style="flex:1;min-width:180px;border:2px dashed var(--nb-border);' +
-                    'border-radius:8px;padding:22px 16px;text-align:center;cursor:pointer;' +
-                    'transition:border-color .2s,background .2s;">' +
-                    '<div style="font-size:28px;margin-bottom:6px;">📁</div>' +
-                    '<div style="font-weight:700;font-size:13px;margin-bottom:3px;">Arrastra el Excel o haz clic</div>' +
-                    '<div style="font-size:11px;color:var(--nb-text-light);">Hoja <strong>STAFF</strong> · .xlsx / .xls</div>' +
-                    '<input type="file" id="stInputFile" accept=".xlsx,.xls" style="display:none;">' +
-                '</div>' +
+    // Botón de carga (label wrapping input file)
+    var lbl = document.createElement('label');
+    lbl.className = 'btn btn-secondary btn-sm st-toolbar-btn';
+    lbl.title     = 'Arrastra un .xlsx aquí o haz clic para seleccionar archivo';
+    lbl.innerHTML = '📁 Cargar Excel';
+    var inp = document.createElement('input');
+    inp.type   = 'file';
+    inp.id     = 'stInputFile';
+    inp.accept = '.xlsx,.xls';
+    inp.style.display = 'none';
+    inp.addEventListener('change', function(e) {
+        if (e.target.files[0]) _stCargarExcel(e.target.files[0]);
+    });
+    lbl.appendChild(inp);
 
-                // Botones laterales
-                '<div style="display:flex;flex-direction:column;gap:8px;padding-top:4px;">' +
-                    '<button class="btn btn-secondary btn-sm" onclick="descargarPlantillaStaff()" ' +
-                        'title="Descarga un Excel vacío con los headers correctos para rellenar desde 0">📥 Descargar plantilla vacía</button>' +
-                    '<button class="btn btn-secondary btn-sm" onclick="generarDemoStaff()" ' +
-                        'title="Genera 20 agentes de prueba para explorar la herramienta">🧪 Datos demo</button>' +
-                '</div>' +
-            '</div>' +
-            '<div id="stBanner" style="display:none;margin-top:10px;"></div>' +
-        '</div>';
+    var btnPlantilla = document.createElement('button');
+    btnPlantilla.className = 'btn btn-secondary btn-sm st-toolbar-btn';
+    btnPlantilla.title     = 'Descarga una plantilla Excel vacía con formato y validaciones';
+    btnPlantilla.innerHTML = '📥 Plantilla vacía';
+    btnPlantilla.addEventListener('click', descargarPlantillaStaff);
 
-    // Eventos — diferidos para que el DOM esté listo
-    setTimeout(function() {
-        var zone  = panel.querySelector('#stUploadZone');
-        var input = panel.querySelector('#stInputFile');
-        if (!zone || !input) return;
+    var btnDemo = document.createElement('button');
+    btnDemo.className = 'btn btn-secondary btn-sm st-toolbar-btn';
+    btnDemo.title     = 'Genera 20 agentes de prueba para explorar la herramienta';
+    btnDemo.innerHTML = '🧪 Datos demo';
+    btnDemo.addEventListener('click', generarDemoStaff);
 
-        zone.addEventListener('click', function() { input.click(); });
+    var banner = document.createElement('div');
+    banner.id = 'stBanner';
+    banner.style.display = 'none';
 
-        zone.addEventListener('dragover', function(e) {
-            e.preventDefault();
-            zone.style.borderColor = 'var(--nb-primary)';
-            zone.style.background  = 'var(--nb-primary-light)';
-        });
-        zone.addEventListener('dragleave', function() {
-            zone.style.borderColor = 'var(--nb-border)';
-            zone.style.background  = '';
-        });
-        zone.addEventListener('drop', function(e) {
-            e.preventDefault();
-            zone.style.borderColor = 'var(--nb-border)';
-            zone.style.background  = '';
-            var f = e.dataTransfer.files[0];
-            if (f) _stCargarExcel(f);
-        });
-        input.addEventListener('change', function(e) {
-            if (e.target.files[0]) _stCargarExcel(e.target.files[0]);
-        });
-    }, 0);
+    bar.appendChild(lbl);
+    bar.appendChild(btnPlantilla);
+    bar.appendChild(btnDemo);
+    bar.appendChild(banner);
 
-    return panel;
+    // Soporte drag & drop sobre toda la barra
+    bar.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        bar.classList.add('drag-over');
+    });
+    bar.addEventListener('dragleave', function() { bar.classList.remove('drag-over'); });
+    bar.addEventListener('drop', function(e) {
+        e.preventDefault();
+        bar.classList.remove('drag-over');
+        var f = (e.dataTransfer.files || [])[0];
+        if (f) _stCargarExcel(f);
+    });
+
+    return bar;
 }
 
 // ── Filtros ────────────────────────────────────────────────────────────────
@@ -361,12 +384,13 @@ function _stRenderTabla(wrap) {
 // ── Fila de la tabla ──────────────────────────────────────────────────────
 
 function _stCrearFila(agente, realIdx) {
+    var warns = _stValidarAgente(agente);
     var tr = document.createElement('tr');
     tr.dataset.idx = realIdx;
 
-    // Celda de acción: eliminar
+    // Celda de acción: eliminar + icono de warning
     var tdAcc = document.createElement('td');
-    tdAcc.style.cssText = 'text-align:center;padding:2px;';
+    tdAcc.style.cssText = 'text-align:center;padding:2px;white-space:nowrap;';
     var btnDel = document.createElement('button');
     btnDel.className  = 'btn btn-danger btn-sm';
     btnDel.title      = 'Eliminar agente';
@@ -374,6 +398,13 @@ function _stCrearFila(agente, realIdx) {
     btnDel.style.cssText = 'padding:2px 6px;font-size:11px;';
     btnDel.addEventListener('click', function() { _stEliminarFila(realIdx); });
     tdAcc.appendChild(btnDel);
+    if (warns.length) {
+        var warnSpan = document.createElement('span');
+        warnSpan.innerHTML  = ' ⚠️';
+        warnSpan.title      = warns.join('\n');
+        warnSpan.className  = 'st-warn-icon';
+        tdAcc.appendChild(warnSpan);
+    }
     tr.appendChild(tdAcc);
 
     // Celdas de datos
@@ -386,13 +417,20 @@ function _stCrearFila(agente, realIdx) {
 
         _stRenderCeldaContenido(td, agente, col);
 
-        // Clic simple → seleccionar origen para paste
-        td.addEventListener('click', function() {
-            document.querySelectorAll('#stTabla td.st-sel').forEach(function(c) {
-                c.classList.remove('st-sel');
-            });
-            td.classList.add('st-sel');
-            _stSelOrigen = { rowIdx: realIdx, colIdx: colIdx };
+        // Clic simple: iniciar o extender selección de rango
+        td.addEventListener('click', function(e) {
+            if (e.shiftKey && _stSelOrigen !== null) {
+                _stSelRango = {
+                    r1: Math.min(_stSelOrigen.rowIdx, realIdx),
+                    c1: Math.min(_stSelOrigen.colIdx, colIdx),
+                    r2: Math.max(_stSelOrigen.rowIdx, realIdx),
+                    c2: Math.max(_stSelOrigen.colIdx, colIdx)
+                };
+            } else {
+                _stSelOrigen = { rowIdx: realIdx, colIdx: colIdx };
+                _stSelRango  = { r1: realIdx, c1: colIdx, r2: realIdx, c2: colIdx };
+            }
+            _stHighlightRango();
         });
 
         // Doble clic → editar inline
@@ -441,9 +479,9 @@ function _stEditarCelda(td, agente, col, realIdx) {
     } else if (col.tipo === 'tlist') {
         input = document.createElement('input');
         input.type  = 'text';
-        input.list  = 'stTurnosList';
+        var dlId = _stAsegurarDatalistCol(col);
+        input.setAttribute('list', dlId);
         input.value = valActual;
-        _stAsegurarDatalistTurnos();
 
     } else {
         input = document.createElement('input');
@@ -465,6 +503,21 @@ function _stEditarCelda(td, agente, col, realIdx) {
         _stRecalcActivos();
         _stRenderCeldaContenido(td, agente, col);
         td.style.cursor = 'default';
+        // Actualizar icono de warning en la fila
+        var tr = td.closest ? td.closest('tr') : null;
+        if (tr) {
+            var tdA = tr.querySelector('td:first-child');
+            if (tdA) {
+                var old = tdA.querySelector('.st-warn-icon'); if (old) old.remove();
+                var ws = _stValidarAgente(agente);
+                if (ws.length) {
+                    var sp = document.createElement('span');
+                    sp.innerHTML = ' ⚠️'; sp.title = ws.join('\n');
+                    sp.className = 'st-warn-icon';
+                    tdA.appendChild(sp);
+                }
+            }
+        }
         _stRenderStats(document.getElementById('stStats'));
         programarGuardado();
     }
@@ -494,14 +547,16 @@ function _stMoverFoco(td, dCol, dRow) {
     }
 }
 
-function _stAsegurarDatalistTurnos() {
-    if (document.getElementById('stTurnosList')) return;
+function _stAsegurarDatalistCol(col) {
+    var dlId = 'dl_' + col.key;
+    if (document.getElementById(dlId)) return dlId;
     var dl = document.createElement('datalist');
-    dl.id  = 'stTurnosList';
-    STAFF_TURNOS.forEach(function(t) {
+    dl.id  = dlId;
+    (col.opts || []).forEach(function(t) {
         var o = document.createElement('option'); o.value = t; dl.appendChild(o);
     });
     document.body.appendChild(dl);
+    return dlId;
 }
 
 // ── Get / Set valor de agente ────────────────────────────────────────────
@@ -577,10 +632,17 @@ function _stGetFiltradas() {
         if (_stFiltroSvc && a.servicioId !== _stFiltroSvc) return false;
         if (_stFiltroEstado === 'activo') {
             var inactivo = ['IT', 'MAT', 'PAT', 'LACT', 'EXC', 'PR', 'P.DTO'];
-            return !a.it_fin && !inactivo.includes((a.estado || '').toUpperCase());
+            return !inactivo.includes((a.estado || '').toUpperCase());
         }
         if (_stFiltroEstado) {
             return (a.estado || '').toUpperCase() === _stFiltroEstado.toUpperCase();
+        }
+        // Filtros por columna
+        for (var key in _stFiltrosCol) {
+            var fval = (_stFiltrosCol[key] || '').toLowerCase().trim();
+            if (!fval) continue;
+            var aval = String(_stGetVal(a, key) || '').toLowerCase();
+            if (aval.indexOf(fval) === -1) return false;
         }
         return true;
     });
@@ -664,10 +726,8 @@ function _stBanner(msg, tipo) {
 // ── Paste desde Excel (Ctrl+V) ────────────────────────────────────────────
 
 function _stOnPaste(e) {
-    // Solo si hay una celda seleccionada en la tabla staff
     if (_stSelOrigen === null) return;
     if (!document.getElementById('stTabla')) {
-        // El módulo ya no está visible — limpiar origen
         _stSelOrigen = null;
         return;
     }
@@ -681,13 +741,23 @@ function _stOnPaste(e) {
 
     var startRow = _stSelOrigen.rowIdx;
     var startCol = _stSelOrigen.colIdx;
-    var pegados  = 0;
 
+    // Guardar snapshot para undo ANTES de modificar
+    var snapshot = [];
+    lineas.forEach(function(l, ri) {
+        var rowIdx = startRow + ri;
+        if (rowIdx < State.staff.todos.length) {
+            snapshot.push({ idx: rowIdx, data: JSON.parse(JSON.stringify(State.staff.todos[rowIdx])) });
+        }
+    });
+    _stHistorial.push(snapshot);
+    if (_stHistorial.length > 20) _stHistorial.shift();
+
+    var pegados = 0;
     lineas.forEach(function(linea, ri) {
         var celdas = linea.split('\t');
         var rowIdx = startRow + ri;
 
-        // Si se pega más allá del final → añadir filas
         if (rowIdx >= State.staff.todos.length) {
             State.staff.todos.push(_crearAgente());
         }
@@ -939,4 +1009,87 @@ function _stEsc(str) {
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
+}
+
+// ── Validación de agente ─────────────────────────────────────────────────────
+
+function _stValidarAgente(agente) {
+    var warns = [];
+    var turno = (agente.tipoTurno || '').toUpperCase();
+
+    var tieneT = function(n) {
+        switch (n) {
+            case 1: return !!(agente.inicioTurno  && agente.finTurno);
+            case 2: return !!(agente.inicioTurno2 && agente.finTurno2);
+            case 3: return !!(agente.inicioTurno3 && agente.finTurno3);
+            case 4: return !!(agente.inicioTurno4 && agente.finTurno4);
+        }
+        return false;
+    };
+
+    if (turno === 'ROTATIVO X 4') {
+        if (!tieneT(1) || !tieneT(2) || !tieneT(3) || !tieneT(4))
+            warns.push('ROTATIVO X 4: se necesitan 4 franjas horarias (Turno 1-4)');
+    } else if (turno === 'ROTATIVO X 3') {
+        if (!tieneT(1) || !tieneT(2) || !tieneT(3))
+            warns.push('ROTATIVO X 3: se necesitan 3 franjas horarias (Turno 1-3)');
+    } else if (turno === 'ROTATIVO') {
+        if (!tieneT(1) || !tieneT(2))
+            warns.push('ROTATIVO: se necesitan al menos 2 franjas horarias (Turno 1 y 2)');
+    }
+
+    if (turno.indexOf('PARTIDO') !== -1 && !(agente.horarioPartido || '').trim()) {
+        warns.push('Turno PARTIDO: el campo HORARIO PARTIDO no puede estar vacío');
+    }
+
+    return warns;
+}
+
+// ── Deshacer ────────────────────────────────────────────────────────────────
+
+function _stUndo() {
+    if (!_stHistorial.length) {
+        toast('Nada que deshacer', 'info');
+        return;
+    }
+    var snapshot = _stHistorial.pop();
+    snapshot.forEach(function(entry) {
+        if (entry.idx < State.staff.todos.length) {
+            // Restaurar campo a campo (no reemplazar objeto para mantener referencias)
+            var target = State.staff.todos[entry.idx];
+            Object.keys(entry.data).forEach(function(k) { target[k] = entry.data[k]; });
+        }
+    });
+    _stRecalcActivos();
+    _stActualizar();
+    programarGuardado();
+    toast('Pegado deshecho', 'success');
+}
+
+// ── Selección visual de rango ───────────────────────────────────────────────
+
+function _stHighlightRango() {
+    document.querySelectorAll('#stTabla td.st-sel').forEach(function(c) {
+        c.classList.remove('st-sel');
+    });
+    if (!_stSelRango) return;
+    var r = _stSelRango;
+    for (var row = r.r1; row <= r.r2; row++) {
+        for (var col = r.c1; col <= r.c2; col++) {
+            var td = document.querySelector(
+                '#stTabla td[data-row="' + row + '"][data-col-idx="' + col + '"]'
+            );
+            if (td) td.classList.add('st-sel');
+        }
+    }
+}
+
+function _stLimpiarFiltrosCol() {
+    _stFiltrosCol = {};
+    // Limpiar controles visuales de filtro
+    document.querySelectorAll('#stTabla .st-col-filter').forEach(function(el) {
+        if (el.tagName === 'SELECT') el.selectedIndex = 0;
+        else el.value = '';
+    });
+    _stActualizar();
 }
