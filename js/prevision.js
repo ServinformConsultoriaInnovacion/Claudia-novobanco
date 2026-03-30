@@ -25,6 +25,13 @@ var _pvContainer       = null;   // referencia al div principal del módulo
 var _pvModo            = 'llamadas';   // 'llamadas' | 'aht'
 var _pvVista           = 'mes';        // 'mes' | 'semana'
 var _pvGranularidad    = '30min';      // '15min' | '30min' | '1h'
+var _pvHoraInicio      = 0;           // hora inicio servicio (0-23)
+var _pvHoraFin         = 24;          // hora fin servicio (1-24)
+var _pvEsDemo          = false;       // true si los datos actuales son demo generado
+var _pvVistaGrafico    = false;       // true = mostrar gráfico combinado en lugar de tabla
+var _pvGraficoModo     = 'mes';       // 'mes' | 'semana' | 'dia'  (solo aplica en modo gráfico)
+var _pvDiaOffset       = 0;           // offset días desde hoy para vista gráfica 'dia'
+var _pvChartInstance   = null;        // instancia Chart.js activa (destruir al re-render)
 
 // ══════════════════════════════════════════════════════════════════════════
 //  ENTRY POINT
@@ -32,6 +39,7 @@ var _pvGranularidad    = '30min';      // '15min' | '30min' | '1h'
 
 function renderModuloPrevision(container) {
     _pvContainer = container;
+    if (_pvChartInstance) { _pvChartInstance.destroy(); _pvChartInstance = null; }
     container.innerHTML = '';
 
     // Sincronizar estado de servicio activo con forecast.js
@@ -93,6 +101,7 @@ function _pvRenderToolbar() {
     btnDemo.innerHTML = '🧪 Demo';
     btnDemo.title = 'Generar 4 semanas de datos de prueba';
     btnDemo.addEventListener('click', function() {
+        _pvEsDemo = true;
         if (generarDemoData()) _pvRefrescar();
     });
 
@@ -102,6 +111,7 @@ function _pvRenderToolbar() {
     btnLimpiar.title = 'Borrar todos los datos de previsión';
     btnLimpiar.addEventListener('click', function() {
         if (!confirm('¿Borrar todos los datos de previsión?')) return;
+        _pvEsDemo = false;
         State.forecast.llamadas = {};
         State.forecast.aht      = {};
         State.forecast.editado  = false;
@@ -141,6 +151,17 @@ function _pvRenderToolbar() {
         _pvRefrescar();
     });
 
+    // Botón vista gráfica
+    var btnGrafico = document.createElement('button');
+    btnGrafico.className = 'st-toolbar-btn btn btn-secondary btn-sm';
+    btnGrafico.id = 'pvBtnGrafico';
+    btnGrafico.innerHTML = _pvVistaGrafico ? '📋 Tabla' : '📊 Gráfico';
+    btnGrafico.title = 'Alternar entre vista tabla y vista gráfica combinada (llamadas + AHT)';
+    btnGrafico.addEventListener('click', function() {
+        _pvVistaGrafico = !_pvVistaGrafico;
+        _pvRefrescar();
+    });
+
     // Selector granularidad
     var selGran = document.createElement('select');
     selGran.className = 'st-toolbar-btn btn btn-secondary btn-sm';
@@ -155,7 +176,48 @@ function _pvRenderToolbar() {
     selGran.addEventListener('change', function() {
         _pvGranularidad = selGran.value;
         var min = _pvGranularidad === '15min' ? 15 : _pvGranularidad === '1h' ? 60 : 30;
-        State.config.franjas = generarFranjas(8, 22, min);
+        State.config.franjas = generarFranjas(_pvHoraInicio, _pvHoraFin, min);
+        if (_pvEsDemo) generarDemoData();
+        _pvRefrescar();
+    });
+
+    // Selectores de horario de servicio
+    function _mkHoraSel(idSel, valActual, desde, hasta, onChange) {
+        var s = document.createElement('select');
+        s.id = idSel;
+        s.style.cssText = 'padding:3px 5px;font-size:11px;cursor:pointer;border:1px solid var(--nb-border);' +
+            'border-radius:4px;background:var(--nb-white);color:var(--nb-dark);';
+        for (var h = desde; h <= hasta; h++) {
+            var o = document.createElement('option');
+            o.value = h;
+            o.textContent = (h === 24) ? '00:00' : String(h).padStart(2,'0') + ':00';
+            if (h === valActual) o.selected = true;
+            s.appendChild(o);
+        }
+        s.addEventListener('change', onChange);
+        return s;
+    }
+    var lblHorario = document.createElement('span');
+    lblHorario.style.cssText = 'font-size:11px;color:var(--nb-text-light);white-space:nowrap;align-self:center;';
+    lblHorario.textContent = 'Horario:';
+
+    var selInicio = _mkHoraSel('pvSelInicio', _pvHoraInicio, 0, 23, function() {
+        _pvHoraInicio = parseInt(this.value);
+        if (_pvHoraInicio >= _pvHoraFin) { _pvHoraFin = _pvHoraInicio + 1; selFin.value = _pvHoraFin; }
+        var min = _pvGranularidad === '15min' ? 15 : _pvGranularidad === '1h' ? 60 : 30;
+        State.config.franjas = generarFranjas(_pvHoraInicio, _pvHoraFin, min);
+        if (_pvEsDemo) generarDemoData();
+        _pvRefrescar();
+    });
+    var sepH = document.createElement('span');
+    sepH.textContent = '–';
+    sepH.style.cssText = 'font-size:11px;align-self:center;padding:0 2px;';
+    var selFin = _mkHoraSel('pvSelFin', _pvHoraFin, 1, 24, function() {
+        _pvHoraFin = parseInt(this.value);
+        if (_pvHoraFin <= _pvHoraInicio) { _pvHoraInicio = _pvHoraFin - 1; selInicio.value = _pvHoraInicio; }
+        var min = _pvGranularidad === '15min' ? 15 : _pvGranularidad === '1h' ? 60 : 30;
+        State.config.franjas = generarFranjas(_pvHoraInicio, _pvHoraFin, min);
+        if (_pvEsDemo) generarDemoData();
         _pvRefrescar();
     });
 
@@ -171,7 +233,12 @@ function _pvRenderToolbar() {
     tb.appendChild(btnLimpiar);
     tb.appendChild(btnModo);
     tb.appendChild(btnVista);
+    tb.appendChild(btnGrafico);
     tb.appendChild(selGran);
+    tb.appendChild(lblHorario);
+    tb.appendChild(selInicio);
+    tb.appendChild(sepH);
+    tb.appendChild(selFin);
     tb.appendChild(btnEjemplo);
     tb.appendChild(sep);
     tb.appendChild(info);
@@ -276,9 +343,14 @@ function _pvRenderTablaPanelInner(wrap) {
         wrap.appendChild(tabs);
     }
 
-    // ── Contexto según vista (mes o semana) ──────────────────────────
-    var lunes, primerDia, rangoLabel, hayDatos, crearTabla;
-    if (_pvVista === 'semana') {
+    // ── Contexto según vista ──────────────────────────────────────────
+    var lunes, primerDia, diaSel, rangoLabel, hayDatos, crearTabla;
+    if (_pvVistaGrafico && _pvGraficoModo === 'dia') {
+        diaSel     = _pvGetDiaSel(_pvDiaOffset);
+        rangoLabel = _pvFmtDia(diaSel);
+        hayDatos   = !!State.forecast.llamadas[_fecStr(diaSel)];
+        crearTabla = null;
+    } else if (_pvVistaGrafico && _pvGraficoModo === 'semana' || !_pvVistaGrafico && _pvVista === 'semana') {
         lunes      = _getLunes(_pvSemanaOffset);
         rangoLabel = _fmtRangoSemana(lunes);
         hayDatos   = _pvHayDatosSemana(lunes);
@@ -298,7 +370,11 @@ function _pvRenderTablaPanelInner(wrap) {
         '<span style="font-weight:700;font-size:13px;flex:1;text-align:center;text-transform:capitalize;" id="pvRangoLabel">' + rangoLabel + '</span>' +
         '<button class="btn btn-secondary btn-sm" id="pvBtnHoy">Hoy</button>' +
         '<button class="btn btn-secondary btn-sm" id="pvBtnSig">▶</button>';
-    if (_pvVista === 'semana') {
+    if (_pvVistaGrafico && _pvGraficoModo === 'dia') {
+        nav.querySelector('#pvBtnAnt').onclick = function() { _pvDiaOffset--; _pvRenderTablaPanelInner(wrap); };
+        nav.querySelector('#pvBtnSig').onclick = function() { _pvDiaOffset++; _pvRenderTablaPanelInner(wrap); };
+        nav.querySelector('#pvBtnHoy').onclick = function() { _pvDiaOffset = 0; _pvRenderTablaPanelInner(wrap); };
+    } else if (_pvVistaGrafico && _pvGraficoModo === 'semana' || !_pvVistaGrafico && _pvVista === 'semana') {
         nav.querySelector('#pvBtnAnt').onclick = function() { _pvSemanaOffset--; _fSemanaOffset = _pvSemanaOffset; _pvRenderTablaPanelInner(wrap); };
         nav.querySelector('#pvBtnSig').onclick = function() { _pvSemanaOffset++; _fSemanaOffset = _pvSemanaOffset; _pvRenderTablaPanelInner(wrap); };
         nav.querySelector('#pvBtnHoy').onclick = function() { _pvSemanaOffset = 0; _fSemanaOffset = 0; _pvRenderTablaPanelInner(wrap); };
@@ -308,6 +384,23 @@ function _pvRenderTablaPanelInner(wrap) {
         nav.querySelector('#pvBtnHoy').onclick = function() { _pvMesOffset = 0; _pvRenderTablaPanelInner(wrap); };
     }
     wrap.appendChild(nav);
+
+    // ── Selector de modo gráfico (solo visible en modo gráfico) ───────
+    if (_pvVistaGrafico) {
+        var modoGraf = document.createElement('div');
+        modoGraf.style.cssText = 'display:flex;gap:4px;margin-bottom:10px;';
+        [['semana','📅 Semana'],['mes','📆 Mes'],['dia','📊 Día']].forEach(function(op) {
+            var b = document.createElement('button');
+            b.className = 'btn btn-' + (_pvGraficoModo === op[0] ? 'primary' : 'secondary') + ' btn-sm';
+            b.textContent = op[1];
+            b.addEventListener('click', function() {
+                _pvGraficoModo = op[0];
+                _pvRenderTablaPanelInner(wrap);
+            });
+            modoGraf.appendChild(b);
+        });
+        wrap.appendChild(modoGraf);
+    }
 
     // ── Badge modo ────────────────────────────────────────────────────
     var modoBadge = document.createElement('div');
@@ -322,9 +415,20 @@ function _pvRenderTablaPanelInner(wrap) {
         var aviso = document.createElement('div');
         aviso.style.cssText = 'text-align:center;padding:32px;color:var(--nb-text-light);font-size:13px;' +
             'border:2px dashed var(--nb-border);border-radius:8px;margin-bottom:8px;';
-        aviso.innerHTML = 'No hay datos para ' + (_pvVista === 'semana' ? 'esta semana' : 'este mes') + '.<br>' +
+        var periodoLabel = (_pvVistaGrafico && _pvGraficoModo === 'dia') ? 'este día'
+            : (_pvVistaGrafico ? (_pvGraficoModo === 'semana' ? 'esta semana' : 'este mes')
+            : (_pvVista === 'semana' ? 'esta semana' : 'este mes'));
+        aviso.innerHTML = 'No hay datos para ' + periodoLabel + '.<br>' +
             '<span style="font-size:11px;">Sube un Excel, pulsa <strong>Demo</strong> o descarga el <strong>Ejemplo</strong>.</span>';
         wrap.appendChild(aviso);
+        return;
+    }
+
+    // ── Vista gráfica ─────────────────────────────────────────────────
+    if (_pvVistaGrafico) {
+        var grafRef = (_pvGraficoModo === 'dia') ? diaSel
+            : (_pvGraficoModo === 'semana') ? lunes : primerDia;
+        wrap.appendChild(_pvCrearGrafico(grafRef));
         return;
     }
 
@@ -404,6 +508,17 @@ function _pvFmtMes(primerDia) {
     return meses[primerDia.getMonth()] + ' ' + primerDia.getFullYear();
 }
 
+function _pvGetDiaSel(offset) {
+    var d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + (offset || 0));
+    return d;
+}
+
+function _pvFmtDia(d) {
+    return d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+}
+
 // Calcula el offset de semana relativa para que _fOnPaste funcione correctamente
 function _pvSemOffsetDeFecha(fechaStr) {
     var parts    = fechaStr.split('-');
@@ -465,7 +580,7 @@ function _pvCrearTablaMes(primerDia) {
         var esFDS    = (dow === 0 || dow === 6);
 
         var tr = document.createElement('tr');
-        if (esFDS) tr.style.background = 'var(--nb-grey-bg)';
+        if (esFDS) tr.style.background = '#f0faf3';
 
         // Celda día (sticky left)
         var tdDia = document.createElement('td');
@@ -492,7 +607,8 @@ function _pvCrearTablaMes(primerDia) {
             }
 
             var td = document.createElement('td');
-            td.style.cssText = 'cursor:pointer;text-align:right;padding:3px 4px;font-size:11px;';
+            td.style.cssText = 'cursor:pointer;text-align:right;padding:3px 4px;font-size:11px;' +
+                (esFDS ? 'background:#f0faf3;' : '');
             td.dataset.fecha  = fechaStr;
             td.dataset.franja = franja;
             td.dataset.svcid  = svcId;
@@ -781,6 +897,142 @@ function _pvCrearTablaSemana(lunes) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+//  VISTA GRÁFICA  (gráfico combinado llamadas + AHT promedio)
+// ══════════════════════════════════════════════════════════════════════════
+
+function _pvCrearGrafico(ref) {
+    var labels = [], dataLlam = [], dataAHT = [];
+    var svcId   = _pvServicioActivo;
+    var franjas = State.config.franjas;
+
+    if (_pvGraficoModo === 'dia') {
+        // X = franjas del día seleccionado
+        var fechaDia = _fecStr(ref);
+        franjas.forEach(function(franja) {
+            var l = _getLlam(fechaDia, franja, svcId);
+            var a = _getAHT(fechaDia, franja, svcId);
+            labels.push(franja);
+            dataLlam.push(l || null);
+            dataAHT.push(a > 0 ? a : null);
+        });
+    } else if (_pvGraficoModo === 'semana') {
+        // X = franjas horarias; datos agregados de los 7 días de la semana
+        var fechasSem = [];
+        for (var d = 0; d < 7; d++) fechasSem.push(_fecStr(_addDays(ref, d)));
+        franjas.forEach(function(franja) {
+            var sumL = 0, sumA = 0, nA = 0;
+            fechasSem.forEach(function(fecha) {
+                var l = _getLlam(fecha, franja, svcId);
+                var a = _getAHT(fecha, franja, svcId);
+                sumL += l;
+                if (a > 0) { sumA += a; nA++; }
+            });
+            labels.push(franja);
+            dataLlam.push(sumL || null);
+            dataAHT.push(nA ? Math.round(sumA / nA) : null);
+        });
+    } else {
+        // X = días del mes
+        var nDias = new Date(ref.getFullYear(), ref.getMonth() + 1, 0).getDate();
+        for (var dd = 1; dd <= nDias; dd++) {
+            var dia   = new Date(ref.getFullYear(), ref.getMonth(), dd);
+            var fecha = _fecStr(dia);
+            var sumL  = 0, sumA = 0, nA = 0;
+            franjas.forEach(function(franja) {
+                var l = _getLlam(fecha, franja, svcId);
+                var a = _getAHT(fecha, franja, svcId);
+                sumL += l;
+                if (a > 0) { sumA += a; nA++; }
+            });
+            labels.push(String(dd).padStart(2, '0'));
+            dataLlam.push(sumL || null);
+            dataAHT.push(nA ? Math.round(sumA / nA) : null);
+        }
+    }
+
+    var outer = document.createElement('div');
+    outer.style.cssText = 'position:relative;height:400px;width:100%;padding:8px 0;';
+    var canvas = document.createElement('canvas');
+    outer.appendChild(canvas);
+
+    var ptRadius = labels.length > 50 ? 0 : 3;
+
+    _pvChartInstance = new Chart(canvas, {
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    type: 'bar',
+                    label: 'Llamadas',
+                    data: dataLlam,
+                    backgroundColor: 'rgba(0,91,160,0.65)',
+                    borderColor: 'rgba(0,91,160,0.9)',
+                    borderWidth: 1,
+                    yAxisID: 'yL',
+                    order: 2
+                },
+                {
+                    type: 'line',
+                    label: 'AHT promedio (seg)',
+                    data: dataAHT,
+                    borderColor: '#e87722',
+                    backgroundColor: 'rgba(232,119,34,0.12)',
+                    borderWidth: 2,
+                    pointRadius: ptRadius,
+                    pointHoverRadius: 4,
+                    tension: 0.35,
+                    yAxisID: 'yA',
+                    order: 1,
+                    spanGaps: true
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { position: 'top', labels: { font: { size: 11 }, boxWidth: 14 } },
+                tooltip: {
+                    callbacks: {
+                        label: function(ctx) {
+                            if (ctx.datasetIndex === 0) {
+                                return ' Llamadas: ' + (ctx.raw !== null ? fmtNum(ctx.raw) : '—');
+                            }
+                            return ' AHT: ' + (ctx.raw !== null ? ctx.raw + ' s' : '—');
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    ticks: { font: { size: 10 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 48 },
+                    grid: { color: 'rgba(0,0,0,0.04)' }
+                },
+                yL: {
+                    type: 'linear',
+                    position: 'left',
+                    beginAtZero: true,
+                    title: { display: true, text: 'Llamadas', font: { size: 11 } },
+                    grid: { color: 'rgba(0,0,0,0.04)' },
+                    ticks: { font: { size: 10 } }
+                },
+                yA: {
+                    type: 'linear',
+                    position: 'right',
+                    beginAtZero: true,
+                    title: { display: true, text: 'AHT (seg)', font: { size: 11 } },
+                    grid: { drawOnChartArea: false },
+                    ticks: { font: { size: 10 } }
+                }
+            }
+        }
+    });
+
+    return outer;
+}
+
+// ══════════════════════════════════════════════════════════════════════════
 //  DESCARGA EXCEL DE EJEMPLO  (Mar–May 2026)
 //  Genera dos hojas: "Llamadas" (Fecha|Franja|Servicio|Llamadas)
 //                    "AHT"      (Fecha|Franja|Servicio|AHT)
@@ -848,7 +1100,7 @@ function _pvDescargarEjemplo() {
 
     var wb = XLSX.utils.book_new();
     configs.forEach(function(cfg) {
-        var fr = generarFranjas(8, 22, cfg.min);
+        var fr = generarFranjas(_pvHoraInicio, _pvHoraFin, cfg.min);
         var wsL = XLSX.utils.aoa_to_sheet(_pvHojaTranspuesta(fr, 'llamadas', svcNombre));
         var wsA = XLSX.utils.aoa_to_sheet(_pvHojaTranspuesta(fr, 'aht',      svcNombre));
         XLSX.utils.book_append_sheet(wb, wsL, 'Llamadas_' + cfg.label);
@@ -870,6 +1122,7 @@ function _pvCargarExcel(file) {
         .then(function(res) {
             mostrarProgreso('Procesando...', 90, 'Finalizando...');
             setTimeout(function() {
+                _pvEsDemo = false;
                 ocultarProgreso();
                 _pvRefrescar();
                 var hojas = res.hojas.join(' · ');

@@ -76,7 +76,7 @@ function initUI() {
         State.config.servicios[0].color = siguienteColorServicio();
     }
     if (!State.config.franjas.length) {
-        State.config.franjas = generarFranjas(8, 22, 30);
+        State.config.franjas = generarFranjas(0, 24, 30);
     }
 
     _renderSidebar();
