@@ -23,6 +23,7 @@ var _pvMesOffset       = 0;        // offset mes para vista mensual (0 = mes act
 var _pvServicioActivo  = null;
 var _pvContainer       = null;   // referencia al div principal del módulo
 var _pvModo            = 'llamadas';   // 'llamadas' | 'aht'
+var _pvVista           = 'mes';         // 'mes' | 'semana'
 
 // ══════════════════════════════════════════════════════════════════════════
 //  ENTRY POINT
@@ -128,10 +129,30 @@ function _pvRenderToolbar() {
     info.style.cssText = 'font-size:11px;color:var(--nb-text-light);white-space:nowrap;';
     _pvActualizarInfo(info);
 
+    // Toggle vista mes / semana
+    var btnVista = document.createElement('button');
+    btnVista.className = 'st-toolbar-btn btn btn-secondary btn-sm';
+    btnVista.id = 'pvBtnVista';
+    btnVista.innerHTML = _pvVista === 'mes' ? '📅 Semana' : '📅 Mes';
+    btnVista.title = 'Alternar entre vista semanal y vista mensual';
+    btnVista.addEventListener('click', function() {
+        _pvVista = _pvVista === 'mes' ? 'semana' : 'mes';
+        _pvRefrescar();
+    });
+
+    // Descarga Excel de ejemplo
+    var btnEjemplo = document.createElement('button');
+    btnEjemplo.className = 'st-toolbar-btn btn btn-secondary btn-sm';
+    btnEjemplo.innerHTML = '📥 Ejemplo';
+    btnEjemplo.title = 'Descargar Excel de ejemplo con datos Mar–May 2026';
+    btnEjemplo.addEventListener('click', _pvDescargarEjemplo);
+
     tb.appendChild(zona);
     tb.appendChild(btnDemo);
     tb.appendChild(btnLimpiar);
     tb.appendChild(btnModo);
+    tb.appendChild(btnVista);
+    tb.appendChild(btnEjemplo);
     tb.appendChild(sep);
     tb.appendChild(info);
     return tb;
@@ -235,18 +256,37 @@ function _pvRenderTablaPanelInner(wrap) {
         wrap.appendChild(tabs);
     }
 
-    // ── Navegación de mes ─────────────────────────────────────────────
-    var primerDia = _pvGetPrimerDiaMes(_pvMesOffset);
+    // ── Contexto según vista (mes o semana) ──────────────────────────
+    var lunes, primerDia, rangoLabel, hayDatos, crearTabla;
+    if (_pvVista === 'semana') {
+        lunes      = _getLunes(_pvSemanaOffset);
+        rangoLabel = _fmtRangoSemana(lunes);
+        hayDatos   = _pvHayDatosSemana(lunes);
+        crearTabla = function() { return _pvCrearTablaSemana(lunes); };
+    } else {
+        primerDia  = _pvGetPrimerDiaMes(_pvMesOffset);
+        rangoLabel = _pvFmtMes(primerDia);
+        hayDatos   = _pvHayDatosMes(primerDia);
+        crearTabla = function() { return _pvCrearTablaMes(primerDia); };
+    }
+
+    // ── Navegación ───────────────────────────────────────────────────
     var nav = document.createElement('div');
     nav.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;';
     nav.innerHTML =
         '<button class="btn btn-secondary btn-sm" id="pvBtnAnt">◀</button>' +
-        '<span style="font-weight:700;font-size:13px;flex:1;text-align:center;text-transform:capitalize;" id="pvRangoLabel">' + _pvFmtMes(primerDia) + '</span>' +
+        '<span style="font-weight:700;font-size:13px;flex:1;text-align:center;text-transform:capitalize;" id="pvRangoLabel">' + rangoLabel + '</span>' +
         '<button class="btn btn-secondary btn-sm" id="pvBtnHoy">Hoy</button>' +
         '<button class="btn btn-secondary btn-sm" id="pvBtnSig">▶</button>';
-    nav.querySelector('#pvBtnAnt').onclick = function() { _pvMesOffset--; _pvRenderTablaPanelInner(wrap); };
-    nav.querySelector('#pvBtnSig').onclick = function() { _pvMesOffset++; _pvRenderTablaPanelInner(wrap); };
-    nav.querySelector('#pvBtnHoy').onclick = function() { _pvMesOffset = 0; _pvRenderTablaPanelInner(wrap); };
+    if (_pvVista === 'semana') {
+        nav.querySelector('#pvBtnAnt').onclick = function() { _pvSemanaOffset--; _fSemanaOffset = _pvSemanaOffset; _pvRenderTablaPanelInner(wrap); };
+        nav.querySelector('#pvBtnSig').onclick = function() { _pvSemanaOffset++; _fSemanaOffset = _pvSemanaOffset; _pvRenderTablaPanelInner(wrap); };
+        nav.querySelector('#pvBtnHoy').onclick = function() { _pvSemanaOffset = 0; _fSemanaOffset = 0; _pvRenderTablaPanelInner(wrap); };
+    } else {
+        nav.querySelector('#pvBtnAnt').onclick = function() { _pvMesOffset--; _pvRenderTablaPanelInner(wrap); };
+        nav.querySelector('#pvBtnSig').onclick = function() { _pvMesOffset++; _pvRenderTablaPanelInner(wrap); };
+        nav.querySelector('#pvBtnHoy').onclick = function() { _pvMesOffset = 0; _pvRenderTablaPanelInner(wrap); };
+    }
     wrap.appendChild(nav);
 
     // ── Badge modo ────────────────────────────────────────────────────
@@ -257,13 +297,13 @@ function _pvRenderTablaPanelInner(wrap) {
         ';color:#fff;">' + (_pvModo === 'llamadas' ? '📞 Llamadas' : '⏱ AHT (seg)') + '</span>';
     wrap.appendChild(modoBadge);
 
-    // ── Sin datos para este mes ───────────────────────────────────────
-    if (!_pvHayDatosMes(primerDia)) {
+    // ── Sin datos ─────────────────────────────────────────────────────
+    if (!hayDatos) {
         var aviso = document.createElement('div');
         aviso.style.cssText = 'text-align:center;padding:32px;color:var(--nb-text-light);font-size:13px;' +
             'border:2px dashed var(--nb-border);border-radius:8px;margin-bottom:8px;';
-        aviso.innerHTML = 'No hay datos para este mes.<br>' +
-            '<span style="font-size:11px;">Sube un Excel o pulsa <strong>Demo</strong> para generar datos de prueba.</span>';
+        aviso.innerHTML = 'No hay datos para ' + (_pvVista === 'semana' ? 'esta semana' : 'este mes') + '.<br>' +
+            '<span style="font-size:11px;">Sube un Excel, pulsa <strong>Demo</strong> o descarga el <strong>Ejemplo</strong>.</span>';
         wrap.appendChild(aviso);
         return;
     }
@@ -281,7 +321,7 @@ function _pvRenderTablaPanelInner(wrap) {
     var fTableScroll = document.createElement('div');
     fTableScroll.id        = 'fTableScroll';
     fTableScroll.className = 'f-table-scroll';
-    var fTable = _pvCrearTablaMes(primerDia);
+    var fTable = crearTabla();
     fTableScroll.appendChild(fTable);
 
     fWrap.appendChild(fTopBar);
@@ -594,6 +634,189 @@ function _pvHayDatosMes(primerDia) {
         if (State.forecast.llamadas[f]) return true;
     }
     return false;
+}
+
+function _pvHayDatosSemana(lunes) {
+    for (var d = 0; d < 7; d++) {
+        if (State.forecast.llamadas[_fecStr(_addDays(lunes, d))]) return true;
+    }
+    return false;
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  TABLA SEMANAL  (filas = franjas · columnas = días)
+// ══════════════════════════════════════════════════════════════════════════
+
+function _pvCrearTablaSemana(lunes) {
+    var franjas = State.config.franjas;
+    var svcId   = _pvServicioActivo;
+    var modo    = _pvModo;
+    var fechas  = [];
+    for (var d = 0; d < 7; d++) fechas.push(_fecStr(_addDays(lunes, d)));
+
+    var table = document.createElement('table');
+    table.id        = 'fTabla';
+    table.className = 'nb-table f-table';
+
+    // ── Cabecera: corner + Lun-Dom + Total ────────────────────────────
+    var thead = document.createElement('thead');
+    var trH   = document.createElement('tr');
+    trH.innerHTML = '<th class="f-th-corner">Franja</th>';
+    fechas.forEach(function(f, i) {
+        var esFDS  = (i === 5 || i === 6);
+        var dDate  = _addDays(lunes, i);
+        var hayDia = !!State.forecast.llamadas[f];
+        trH.innerHTML += '<th class="f-th-day' + (esFDS ? ' f-th-fds' : '') + '" data-fecha="' + f + '">' +
+            _DIAS_SHORT[i] + '<br>' +
+            '<span style="font-weight:400;font-size:10px;">' + dDate.getDate() + '/' + (dDate.getMonth() + 1) + '</span>' +
+            (!hayDia ? '<br><span style="font-size:9px;color:var(--nb-text-light);">sin datos</span>' : '') +
+            '</th>';
+    });
+    trH.innerHTML += '<th class="f-th-day">Total</th>';
+    thead.appendChild(trH);
+    table.appendChild(thead);
+
+    // ── Cuerpo: una fila por franja ───────────────────────────────────
+    var tbody      = document.createElement('tbody');
+    var esAHT      = (modo === 'aht');
+    var colTotalsL = new Array(7).fill(0);
+    var colAhtSum  = new Array(7).fill(0);
+    var colAhtN    = new Array(7).fill(0);
+    var grandTotal = 0, grandAhtSum = 0, grandAhtN = 0;
+
+    franjas.forEach(function(franja) {
+        var tr  = document.createElement('tr');
+        var tdF = document.createElement('td');
+        tdF.className = 'f-td-franja';
+        tdF.textContent = franja;
+        tr.appendChild(tdF);
+
+        var rowTotal = 0, rowAhtSum = 0, rowAhtN = 0;
+        fechas.forEach(function(fecha, di) {
+            var llam = _getLlam(fecha, franja, svcId);
+            var aht  = _getAHT(fecha, franja, svcId);
+            colTotalsL[di] += llam;
+            rowTotal        += llam;
+            grandTotal      += llam;
+            if (aht > 0) {
+                colAhtSum[di] += aht; colAhtN[di]++;
+                rowAhtSum     += aht; rowAhtN++;
+                grandAhtSum   += aht; grandAhtN++;
+            }
+            var td = document.createElement('td');
+            td.style.cssText = 'cursor:pointer;text-align:right;padding:4px 6px;font-size:12px;min-width:62px;';
+            td.dataset.fecha  = fecha;
+            td.dataset.franja = franja;
+            td.dataset.svcid  = svcId;
+            td.dataset.modo   = modo;
+            _pvRenderCelda(td, llam, aht, modo);
+            td.title = fecha + ' · ' + franja + ' — doble clic para editar';
+            td.addEventListener('click', function() {
+                var prev = document.querySelector('#fTabla td.f-sel');
+                if (prev) prev.classList.remove('f-sel');
+                td.classList.add('f-sel');
+                _fSelCelda      = { fecha: td.dataset.fecha, franja: td.dataset.franja };
+                _pvSemanaOffset = _pvSemOffsetDeFecha(td.dataset.fecha);
+                _fSemanaOffset  = _pvSemanaOffset;
+            });
+            td.addEventListener('dblclick', function() { _pvEditarCelda(td); });
+            tr.appendChild(td);
+        });
+
+        var tdTot = document.createElement('td');
+        tdTot.style.cssText = 'font-size:12px;font-weight:700;background:var(--nb-grey-bg);text-align:right;padding:4px 6px;';
+        tdTot.textContent = esAHT
+            ? (rowAhtN ? Math.round(rowAhtSum / rowAhtN) + ' s' : '—')
+            : (rowTotal ? fmtNum(rowTotal) : '—');
+        tr.appendChild(tdTot);
+        tbody.appendChild(tr);
+    });
+
+    // ── Fila totales ──────────────────────────────────────────────────
+    var trTot = document.createElement('tr');
+    trTot.style.cssText = 'background:var(--nb-grey-bg);font-weight:700;';
+    var tdTotLabel = document.createElement('td');
+    tdTotLabel.className = 'f-td-franja';
+    tdTotLabel.textContent = esAHT ? 'Ø AHT' : 'TOTAL';
+    trTot.appendChild(tdTotLabel);
+    for (var di = 0; di < 7; di++) {
+        var tdC = document.createElement('td');
+        tdC.style.cssText = 'font-size:12px;text-align:right;padding:4px 6px;';
+        tdC.textContent = esAHT
+            ? (colAhtN[di] ? Math.round(colAhtSum[di] / colAhtN[di]) + ' s' : '—')
+            : (colTotalsL[di] ? fmtNum(colTotalsL[di]) : '—');
+        trTot.appendChild(tdC);
+    }
+    var tdGrand = document.createElement('td');
+    tdGrand.style.cssText = 'font-size:12px;text-align:right;padding:4px 6px;';
+    tdGrand.textContent = esAHT
+        ? (grandAhtN ? Math.round(grandAhtSum / grandAhtN) + ' s' : '—')
+        : (grandTotal ? fmtNum(grandTotal) : '—');
+    trTot.appendChild(tdGrand);
+    tbody.appendChild(trTot);
+    table.appendChild(tbody);
+    return table;
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  DESCARGA EXCEL DE EJEMPLO  (Mar–May 2026)
+//  Genera dos hojas: "Llamadas" (Fecha|Franja|Servicio|Llamadas)
+//                    "AHT"      (Fecha|Franja|Servicio|AHT)
+// ══════════════════════════════════════════════════════════════════════════
+
+function _pvDescargarEjemplo() {
+    var servicios = State.config.servicios.length
+        ? State.config.servicios
+        : [{ nombre: 'Servicio 1', id: 'svc1' }];
+    var franjas = State.config.franjas.length
+        ? State.config.franjas
+        : ['09:00','09:30','10:00','10:30','11:00','11:30','12:00','12:30',
+           '13:00','13:30','14:00','14:30','15:00','15:30','16:00','16:30',
+           '17:00','17:30','18:00','18:30','19:00','19:30','20:00','20:30'];
+
+    // Patrón de carga por hora  (factor × llamadas base)
+    function patron(hora) {
+        if (hora >= 10 && hora < 12) return 1.4;
+        if (hora >= 15 && hora < 17) return 1.2;
+        if (hora >=  9 && hora < 13) return 1.0;
+        if (hora >= 13 && hora < 18) return 0.85;
+        if (hora >= 18 && hora < 20) return 0.55;
+        return 0.3;
+    }
+    // Pseudo-random determinista (sin Math.random para reproducibilidad)
+    function prnd(d, fi, si) { return ((d * 13 + fi * 7 + si * 3) % 97) / 97; }
+
+    var rowsLlam = [['Fecha', 'Franja', 'Servicio', 'Llamadas']];
+    var rowsAHT  = [['Fecha', 'Franja', 'Servicio', 'AHT']];
+
+    [2, 3, 4].forEach(function(mes0) {   // 0-indexed: 2=marzo, 3=abril, 4=mayo
+        var nDias = new Date(2026, mes0 + 1, 0).getDate();
+        for (var d = 1; d <= nDias; d++) {
+            var dow  = new Date(2026, mes0, d).getDay();
+            var fds  = (dow === 0 || dow === 6);
+            var str  = '2026-' + String(mes0 + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+            franjas.forEach(function(franja, fi) {
+                var h    = parseInt(franja, 10);
+                var f    = patron(h) * (fds ? 0.4 : 1.0);
+                servicios.forEach(function(svc, si) {
+                    var r    = prnd(d + mes0 * 31, fi, si);
+                    var llam = Math.round((20 + r * 20) * f);
+                    var aht  = Math.round(200 + (1 - r) * 80 - f * 30);
+                    if (llam > 0) {
+                        rowsLlam.push([str, franja, svc.nombre, llam]);
+                        rowsAHT.push([str, franja, svc.nombre, Math.max(60, aht)]);
+                    }
+                });
+            });
+        }
+    });
+
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rowsLlam), 'Llamadas');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rowsAHT),  'AHT');
+    var buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    saveAs(new Blob([buf], { type: 'application/octet-stream' }), 'prevision_ejemplo_mar-may2026.xlsx');
+    toast('Excel de ejemplo descargado (Mar–May 2026)', 'success');
 }
 
 // ══════════════════════════════════════════════════════════════════════════

@@ -160,7 +160,13 @@ function _procesarWorkbook(wb) {
         result.nRegistros = _parsearPrevision(prevRows);
         result.hojas.push('Previsión — ' + result.nRegistros + ' registros');
     }
-
+    // AHT en hoja separada (complementa la hoja de llamadas: no resetea)
+    var ahtKey = sheets['aht'] || sheets['tmo'];
+    if (ahtKey && ahtKey !== prevKey) {
+        var ahtRows = XLSX.utils.sheet_to_json(wb.Sheets[ahtKey], { header: 1, defval: '' });
+        var nAHT = _parsearAHTSheet(ahtRows);
+        if (nAHT) result.hojas.push('AHT — ' + nAHT + ' registros');
+    }
     // ÚLTIMO TURNO
     var utKey = sheets['ultimo_turno'] || sheets['ultimo turno'] || sheets['cierre'];
     if (utKey) {
@@ -362,4 +368,35 @@ function _setForecast(fecha, franja, svcId, llam, aht) {
     if (!State.forecast.llamadas[fecha][franja]) { State.forecast.llamadas[fecha][franja] = {}; State.forecast.aht[fecha][franja] = {}; }
     State.forecast.llamadas[fecha][franja][svcId] = llam;
     State.forecast.aht[fecha][franja][svcId]      = aht;
+}
+
+/**
+ * Lee una hoja "AHT" separada (Fecha | Franja | Servicio | AHT).
+ * Sólo actualiza State.forecast.aht, sin resetear llamadas.
+ */
+function _parsearAHTSheet(rows) {
+    if (!rows.length) return 0;
+    var headers   = rows[0].map(function(h) { return h !== null && h !== undefined ? String(h) : ''; });
+    var colFecha  = _findColIdx(headers, 'Fecha', 'Date', 'Día', 'Dia');
+    var colFranja = _findColIdx(headers, 'Franja', 'Hora', 'Time', 'Intervalo');
+    var colSvc    = _findColIdx(headers, 'Servicio', 'Service', 'Cola');
+    var colAHT    = _findColIdx(headers, 'AHT', 'TMO', 'AHT_s', 'Duracion', 'Duration');
+    if (colFecha < 0 || colFranja < 0 || colAHT < 0) return 0;
+    var n = 0;
+    for (var r = 1; r < rows.length; r++) {
+        var row    = rows[r];
+        if (!row || !row.length) continue;
+        var fecha  = _toDateStr(row[colFecha]);
+        var franja = _toFranjaStr(row[colFranja]);
+        if (!fecha || !franja) continue;
+        var svcId  = colSvc >= 0
+            ? _resolverSvcId(String(row[colSvc] || '').trim())
+            : (State.config.servicios.length ? State.config.servicios[0].id : 'svc1');
+        var aht    = parseFloat(row[colAHT]) || 0;
+        if (!State.forecast.aht[fecha])         State.forecast.aht[fecha] = {};
+        if (!State.forecast.aht[fecha][franja]) State.forecast.aht[fecha][franja] = {};
+        State.forecast.aht[fecha][franja][svcId] = aht;
+        n++;
+    }
+    return n;
 }
