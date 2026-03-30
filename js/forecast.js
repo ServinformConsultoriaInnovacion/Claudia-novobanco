@@ -96,12 +96,6 @@ function generarDemoData() {
     return true;
 }
 
-    State.forecast.editado = false;
-    programarGuardado();
-    toast('Datos demo generados: 4 semanas × ' + servicios.length + ' servicio/s', 'success');
-    return true;
-}
-
 function _patronHorario(franjas) {
     var p = {};
     franjas.forEach(function(f) {
