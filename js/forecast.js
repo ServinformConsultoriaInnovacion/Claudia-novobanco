@@ -5,9 +5,11 @@
 
 'use strict';
 
-var _fSemanaOffset   = 0;
-var _fServicioActivo = null;
-var _fContainer      = null;   // referencia al contenedor del editor
+var _fSemanaOffset    = 0;
+var _fServicioActivo  = null;
+var _fContainer       = null;   // referencia al contenedor del editor
+var _fSelCelda        = null;   // { fecha, franja } — celda inicio para Ctrl+V
+var _fPasteRegistrado = false;
 
 var _DIAS_SHORT = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
@@ -157,11 +159,48 @@ function renderEditorPrevision(container) {
         return;
     }
 
-    // Tabla
-    var tableWrap = document.createElement('div');
-    tableWrap.style.cssText = 'overflow-x:auto;max-height:440px;overflow-y:auto;';
-    tableWrap.appendChild(_crearTablaForecast(lunes));
-    container.appendChild(tableWrap);
+    // Tabla — arquitectura doble scroll (igual que Staff: topBar espejo + tableScroll)
+    var fWrap = document.createElement('div');
+
+    var fTopBar = document.createElement('div');
+    fTopBar.id        = 'fTopBar';
+    fTopBar.className = 'f-top-scroll';
+    var fTopInner = document.createElement('div');
+    fTopInner.className = 'f-top-inner';
+    fTopBar.appendChild(fTopInner);
+
+    var fTableScroll = document.createElement('div');
+    fTableScroll.id        = 'fTableScroll';
+    fTableScroll.className = 'f-table-scroll';
+    var fTable = _crearTablaForecast(lunes);
+    fTableScroll.appendChild(fTable);
+
+    fWrap.appendChild(fTopBar);
+    fWrap.appendChild(fTableScroll);
+    container.appendChild(fWrap);
+
+    // Sincronizar scrollbars top ↔ tableScroll (sin bucle)
+    var fSyncing = false;
+    fTopBar.addEventListener('scroll', function() {
+        if (fSyncing) return; fSyncing = true;
+        fTableScroll.scrollLeft = fTopBar.scrollLeft;
+        fSyncing = false;
+    });
+    fTableScroll.addEventListener('scroll', function() {
+        if (fSyncing) return; fSyncing = true;
+        fTopBar.scrollLeft = fTableScroll.scrollLeft;
+        fSyncing = false;
+    });
+    requestAnimationFrame(function() {
+        fTopInner.style.width  = fTable.scrollWidth + 'px';
+        fTopInner.style.height = '1px';
+    });
+
+    // Registrar handler de paste exactamente una vez por sesión
+    if (!_fPasteRegistrado) {
+        document.addEventListener('paste', _fOnPaste);
+        _fPasteRegistrado = true;
+    }
 
     // Totales
     var tot = _calcularTotalesSemana(lunes);
@@ -216,21 +255,23 @@ function _crearTablaForecast(lunes) {
     for (var d = 0; d < 7; d++) fechas.push(_fecStr(_addDays(lunes, d)));
 
     var table = document.createElement('table');
-    table.className = 'nb-table';
+    table.id        = 'fTabla';
+    table.className = 'nb-table f-table';
     table.style.minWidth = '580px';
 
-    // Cabecera
+    // Cabecera con sticky top (funciona porque .f-table-scroll tiene overflow:auto + max-height)
     var thead = document.createElement('thead');
     var trH   = document.createElement('tr');
-    trH.innerHTML = '<th style="position:sticky;left:0;background:var(--nb-grey-bg);z-index:2;">Franja</th>';
+    // Esquina: sticky top + left (z-index mayor para que no quede tapada)
+    trH.innerHTML = '<th class="f-th-corner">Franja</th>';
     fechas.forEach(function(f, i) {
         var esFDS = (i === 5 || i === 6);
         var dDate = _addDays(lunes, i);
-        trH.innerHTML += '<th style="' + (esFDS ? 'color:var(--nb-primary);' : '') + '">' +
+        trH.innerHTML += '<th class="f-th-day' + (esFDS ? ' f-th-fds' : '') + '" data-fecha="' + f + '">' +
             _DIAS_SHORT[i] + '<br>' +
             '<span style="font-weight:400;font-size:10px;">' + dDate.getDate() + '/' + (dDate.getMonth() + 1) + '</span></th>';
     });
-    trH.innerHTML += '<th>Total</th>';
+    trH.innerHTML += '<th class="f-th-day">Total</th>';
     thead.appendChild(trH);
     table.appendChild(thead);
 
@@ -261,7 +302,14 @@ function _crearTablaForecast(lunes) {
             td.dataset.franja = franja;
             td.dataset.svcid  = svcId;
             _renderCelda(td, llam, aht);
-            td.title = 'Doble clic para editar';
+            td.title = 'Clic para seleccionar · doble clic para editar';
+            // Clic simple: marcar como origen para Ctrl+V
+            td.addEventListener('click', function() {
+                var prev = document.querySelector('#fTabla td.f-sel');
+                if (prev) prev.classList.remove('f-sel');
+                td.classList.add('f-sel');
+                _fSelCelda = { fecha: td.dataset.fecha, franja: td.dataset.franja };
+            });
             td.addEventListener('dblclick', function() { _editarCelda(td); });
             tr.appendChild(td);
         });
@@ -397,6 +445,8 @@ function _calcularTotalesSemana(lunes) {
 
 function renderResumenStaff(container) {
     container.innerHTML = '';
+    // Asegurar que activos y servicioId están resueltos (puede llamarse sin visitar el módulo Staff)
+    if (typeof _stRecalcActivos === 'function') _stRecalcActivos();
 
     if (!State.staff.todos.length) {
         container.innerHTML =
@@ -430,9 +480,18 @@ function renderResumenStaff(container) {
         '<thead><tr><th>Servicio</th><th>Total</th><th>Activos</th><th>Ausentes</th></tr></thead>';
     var tbody = document.createElement('tbody');
 
+    // Normalizar nombre de servicio para comparaciones tolerantes a tildes/mayúsculas
+    var normN = function(s) {
+        return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+    };
     State.config.servicios.forEach(function(svc) {
-        var aSvc  = todos.filter(function(a)   { return a.servicioId === svc.id; });
-        var aAct  = activos.filter(function(a) { return a.servicioId === svc.id; });
+        var sNorm = normN(svc.nombre);
+        var aSvc  = todos.filter(function(a) {
+            return a.servicioId === svc.id || normN(a.servicio||'') === sNorm || normN(a.servicioId||'') === sNorm;
+        });
+        var aAct  = activos.filter(function(a) {
+            return a.servicioId === svc.id || normN(a.servicio||'') === sNorm || normN(a.servicioId||'') === sNorm;
+        });
         var tr = document.createElement('tr');
         tr.innerHTML =
             '<td><span class="svc-dot" style="background:' + svc.color + ';margin-right:6px;"></span>' + _escF(svc.nombre) + '</td>' +
@@ -442,8 +501,11 @@ function renderResumenStaff(container) {
         tbody.appendChild(tr);
     });
 
-    var sinSvc = todos.filter(function(a) { return !a.servicioId ||
-        !State.config.servicios.find(function(s) { return s.id === a.servicioId; }); });
+    var sinSvc = todos.filter(function(a) {
+        return !State.config.servicios.find(function(s) {
+            return s.id === a.servicioId || normN(s.nombre) === normN(a.servicio||'') || normN(s.nombre) === normN(a.servicioId||'');
+        });
+    });
     if (sinSvc.length) {
         var trSin = document.createElement('tr');
         trSin.innerHTML = '<td style="color:var(--nb-text-light);">Sin servicio asignado</td>' +
@@ -454,6 +516,55 @@ function renderResumenStaff(container) {
     table.appendChild(tbody);
     tableDiv.appendChild(table);
     container.appendChild(tableDiv);
+}
+
+// ── Paste desde Excel (Ctrl+V) — pega tabla de llamadas ─────────────────
+
+function _fOnPaste(e) {
+    if (_fSelCelda === null) return;
+    if (!document.getElementById('fTabla')) { _fSelCelda = null; return; }
+
+    var txt = (e.clipboardData || window.clipboardData).getData('text');
+    if (!txt) return;
+    e.preventDefault();
+
+    var svcId   = _fServicioActivo;
+    var lunes   = _getLunes(_fSemanaOffset);
+    var franjas = State.config.franjas;
+    var fechas  = [];
+    for (var d = 0; d < 7; d++) fechas.push(_fecStr(_addDays(lunes, d)));
+
+    var startFi = franjas.indexOf(_fSelCelda.franja);
+    var startDi = fechas.indexOf(_fSelCelda.fecha);
+    if (startFi < 0 || startDi < 0) { _fSelCelda = null; return; }
+
+    var lineas = txt.split(/\r?\n/).filter(function(l) { return l.trim() !== ''; });
+    if (!lineas.length) return;
+
+    var pegados = 0;
+    lineas.forEach(function(linea, ri) {
+        var fi = startFi + ri;
+        if (fi >= franjas.length) return;
+        var franja = franjas[fi];
+        linea.split('\t').forEach(function(val, ci) {
+            var di = startDi + ci;
+            if (di >= fechas.length) return;
+            var fecha = fechas[di];
+            var num = parseInt(String(val).replace(/[^\d]/g, ''));
+            if (isNaN(num)) return;
+            if (!State.forecast.llamadas[fecha])         State.forecast.llamadas[fecha] = {};
+            if (!State.forecast.llamadas[fecha][franja]) State.forecast.llamadas[fecha][franja] = {};
+            State.forecast.llamadas[fecha][franja][svcId] = num;
+            pegados++;
+        });
+    });
+
+    if (!pegados) { _fSelCelda = null; return; }
+    State.forecast.editado = true;
+    programarGuardado();
+    _fSelCelda = null;
+    if (_fContainer) renderEditorPrevision(_fContainer);
+    toast(pegados + ' celda' + (pegados !== 1 ? 's' : '') + ' pegada' + (pegados !== 1 ? 's' : ''), 'success');
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────

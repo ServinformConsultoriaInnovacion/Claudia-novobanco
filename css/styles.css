@@ -658,6 +658,72 @@ input[type="date"].st-col-filter {
   box-shadow: 0 0 0 2px rgba(59,179,154,.2);
 }
 
+/* ── Forecast table (Panel B2) ────────────────────────────────────────── */
+
+/* Wrapper (sin overflow — el scroll lo gestiona .f-table-scroll) */
+.f-top-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  height: 14px;
+  margin-bottom: 1px;
+}
+.f-top-scroll::-webkit-scrollbar        { height: 8px; }
+.f-top-scroll::-webkit-scrollbar-track  { background: var(--nb-grey-bg); border-radius: 4px; }
+.f-top-scroll::-webkit-scrollbar-thumb  { background: var(--nb-border); border-radius: 4px; }
+.f-top-scroll::-webkit-scrollbar-thumb:hover { background: var(--nb-primary); }
+
+/* Contenedor real: desborda en X e Y → sticky funciona correctamente */
+.f-table-scroll {
+  overflow: auto;
+  max-height: 460px;
+}
+.f-table-scroll::-webkit-scrollbar        { width: 8px; height: 8px; }
+.f-table-scroll::-webkit-scrollbar-track  { background: var(--nb-grey-bg); }
+.f-table-scroll::-webkit-scrollbar-thumb  { background: var(--nb-border); border-radius: 4px; }
+.f-table-scroll::-webkit-scrollbar-thumb:hover { background: var(--nb-primary); }
+
+/* Cabecera sticky — top:0 funciona porque .f-table-scroll es el padre overflow */
+.f-table-scroll table.f-table thead th { position: sticky; top: 0; z-index: 2; background: var(--nb-grey-bg); }
+
+/* Esquina: sticky top + left */
+.f-th-corner {
+  position: sticky !important;
+  top: 0 !important;
+  left: 0 !important;
+  z-index: 3 !important;
+  background: var(--nb-grey-bg) !important;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--nb-text-light);
+  text-transform: uppercase;
+  letter-spacing: .3px;
+}
+.f-th-day {
+  font-size: 12px;
+  min-width: 72px;
+  text-align: center;
+}
+.f-th-fds { color: var(--nb-primary); }
+
+/* Primera columna (franja) sticky left */
+.f-table-scroll table.f-table tbody td:first-child {
+  position: sticky;
+  left: 0;
+  background: var(--nb-white);
+  z-index: 1;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--nb-text-light);
+  white-space: nowrap;
+}
+
+/* Celda seleccionada (origen paste) */
+#fTabla td.f-sel {
+  outline: 2px solid var(--nb-primary);
+  outline-offset: -2px;
+  background: rgba(227,6,19,.08) !important;
+}
+
 /* Toolbar compacta de staff */
 .st-toolbar {
   display: flex;
