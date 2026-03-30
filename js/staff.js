@@ -514,17 +514,62 @@ function _stEditarCelda(td, agente, col, realIdx) {
     var input;
 
     if (col.tipo === 'select' || col.tipo === 'svc') {
-        input = document.createElement('select');
-        var opciones = col.tipo === 'svc'
-            ? State.config.servicios.map(function(s) { return { v: s.nombre, l: s.nombre }; })
-            : col.opts.map(function(o) { return { v: o, l: o || '(ninguno)' }; });
+        // Custom dropdown para evitar el bug de blur del <select> nativo
+        var opts2 = col.tipo === 'svc'
+            ? State.config.servicios.map(function(s) { return s.nombre; })
+            : (col.opts || []);
 
-        opciones.forEach(function(o) {
-            var opt = document.createElement('option');
-            opt.value = o.v; opt.textContent = o.l;
-            if (o.v === valActual) opt.selected = true;
-            input.appendChild(opt);
+        var wrapper2 = document.createElement('div');
+        wrapper2.style.cssText = 'position:relative;display:block;width:100%;';
+
+        input = document.createElement('input');
+        input.type  = 'text';
+        input.value = valActual;
+        input.readOnly = true;  // solo elegir de lista, no teclear
+        input.style.cssText = 'width:100%;padding:3px 22px 3px 5px;' +
+            'border:1px solid var(--nb-primary);border-radius:3px;' +
+            'font-size:12px;font-family:inherit;background:var(--nb-white);' +
+            'cursor:pointer;box-sizing:border-box;';
+
+        var arrow = document.createElement('span');
+        arrow.textContent = '▾';
+        arrow.style.cssText = 'position:absolute;right:5px;top:50%;transform:translateY(-50%);' +
+            'pointer-events:none;font-size:10px;color:var(--nb-text-light);';
+
+        var ul2 = document.createElement('ul');
+        ul2.className = 'st-dd-list';
+        opts2.forEach(function(opt) {
+            var li = document.createElement('li');
+            li.textContent = opt;
+            li.className   = 'st-dd-item' + (opt === valActual ? ' selected' : '');
+            li.addEventListener('mousedown', function(e) {
+                e.preventDefault();
+                input.value = opt;
+                ul2.style.display = 'none';
+                confirmar();
+            });
+            ul2.appendChild(li);
         });
+
+        input.addEventListener('click', function() {
+            ul2.style.display = ul2.style.display === 'block' ? 'none' : 'block';
+        });
+        input.addEventListener('blur', function() {
+            setTimeout(function() { ul2.style.display = 'none'; }, 150);
+            confirmar();
+        });
+        input.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') { ul2.style.display = 'none'; td.innerHTML = ''; _stRenderCeldaContenido(td, agente, col); }
+        });
+
+        wrapper2.appendChild(input);
+        wrapper2.appendChild(arrow);
+        wrapper2.appendChild(ul2);
+        td.innerHTML = '';
+        td.appendChild(wrapper2);
+        ul2.style.display = 'block'; // abrir inmediatamente
+        input.focus();
+        return; // ya gestionado, no continuar con el flujo genérico
 
     } else if (col.tipo === 'tlist') {
         // Custom dropdown: siempre muestra todas las opciones, filtra mientras escribe
@@ -790,6 +835,7 @@ function _stCargarExcel(file) {
             ocultarProgreso();
             _stBanner('✅ ' + n + ' agentes cargados desde "' + _stEsc(file.name) + '"', 'ok');
             _stActualizar();
+            guardarEstado(); // guardar inmediatamente, sin esperar debounce
             toast(n + ' agentes cargados', 'success');
         } catch (err) {
             ocultarProgreso();
@@ -1086,7 +1132,7 @@ function generarDemoStaff() {
 
     _stRecalcActivos();
     _stActualizar();
-    programarGuardado();
+    guardarEstado(); // guardar inmediatamente tras generar demo
     toast('20 agentes demo generados', 'success');
 }
 
