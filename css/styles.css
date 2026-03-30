@@ -565,45 +565,55 @@ table.nb-table tr:hover td { background: #fafafa; }
 
 /* ── Staff table ──────────────────────────────────────────────── */
 
-/* Contenedor: scroll horizontal en ambos extremos */
+/* Wrapper externo: sin overflow (el scroll lo gestiona el hijo) */
 #stTablaWrap {
-  overflow-x: auto;
-  overflow-y: visible;
-  position: relative;
+  overflow: visible;
 }
 
-/* Barra de desplazamiento horizontal superior (espejo) */
+/* Scrollbar espejo superior — HERMANO (no hijo) del contenedor de la tabla */
 .st-top-scroll {
   overflow-x: auto;
   overflow-y: hidden;
-  height: 12px;
-  margin-bottom: 2px;
+  height: 14px;
+  margin-bottom: 1px;
 }
-.st-top-scroll::-webkit-scrollbar { height: 6px; }
-.st-top-scroll::-webkit-scrollbar-track { background: var(--nb-grey-bg); }
-.st-top-scroll::-webkit-scrollbar-thumb { background: var(--nb-border); border-radius: 3px; }
+.st-top-scroll::-webkit-scrollbar        { height: 8px; }
+.st-top-scroll::-webkit-scrollbar-track  { background: var(--nb-grey-bg); border-radius: 4px; }
+.st-top-scroll::-webkit-scrollbar-thumb  { background: var(--nb-border); border-radius: 4px; }
+.st-top-scroll::-webkit-scrollbar-thumb:hover { background: var(--nb-primary); }
 
-table.staff-table { font-size: 12px; border-collapse: collapse; }
+/* Contenedor real: desborda en X e Y → sticky funciona aquí */
+.st-table-scroll {
+  overflow: auto;
+  max-height: calc(100vh - 310px);
+  min-height: 200px;
+}
+.st-table-scroll::-webkit-scrollbar        { width: 8px; height: 8px; }
+.st-table-scroll::-webkit-scrollbar-track  { background: var(--nb-grey-bg); }
+.st-table-scroll::-webkit-scrollbar-thumb  { background: var(--nb-border); border-radius: 4px; }
+.st-table-scroll::-webkit-scrollbar-thumb:hover { background: var(--nb-primary); }
+
+table.staff-table { font-size: 12px; border-collapse: collapse; width: max-content; min-width: 100%; }
 table.staff-table th { padding: 6px 8px; font-size: 10px; }
 table.staff-table td { padding: 3px 6px; }
 table.staff-table tr:hover td { background: var(--nb-primary-light); }
 
-/* Cabecera pegajosa al desplazar verticalmente */
+/* Cabecera pegajosa: funciona porque .st-table-scroll es el padre overflow */
 table.staff-table thead th {
   position: sticky;
   z-index: 2;
   background: var(--nb-grey-bg);
 }
-/* Fila 1 (etiquetas): top 0 */
 table.staff-table thead tr:first-child th {
   top: 0;
+  border-bottom: 1px solid var(--nb-border);
 }
-/* Fila 2 (filtros): justo debajo de la fila 1 — se ajusta con JS */
+/* Fila de filtros: top calculado por JS (getBoundingClientRect) */
 table.staff-table thead tr.st-filter-row th {
-  top: var(--st-header-h, 32px);
-  background: #F0F4F3;
-  border-bottom: 2px solid var(--nb-border);
+  top: 32px; /* fallback; sobrescrito por JS */
+  background: #EEF3F2;
   padding: 3px 4px;
+  border-bottom: 2px solid var(--nb-border);
 }
 
 /* Celdas seleccionadas (rango) */
@@ -615,7 +625,8 @@ table.staff-table td.st-sel {
 
 /* Celda en modo edición */
 table.staff-table td:has(input),
-table.staff-table td:has(select) {
+table.staff-table td:has(select),
+table.staff-table td:has(div) {
   padding: 0;
   background: var(--nb-white) !important;
 }
@@ -634,7 +645,6 @@ table.staff-table td:has(select) {
   font-family: inherit;
   box-sizing: border-box;
   min-width: 40px;
-  max-width: 100%;
 }
 .st-col-filter:focus {
   outline: none;

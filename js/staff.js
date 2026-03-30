@@ -125,7 +125,7 @@ function renderModuloStaff(container) {
     var tablaWrap = document.createElement('div');
     tablaWrap.id        = 'stTablaWrap';
     tablaWrap.className = 'table-container';
-    tablaWrap.style.overflowX = 'auto';
+    /* overflow gestionado internamente por _stRenderTabla */
     container.appendChild(tablaWrap);
 
     var acciones = document.createElement('div');
@@ -478,40 +478,44 @@ function _stRenderTabla(wrap) {
     info.style.cssText = 'margin-top:10px;font-size:11px;';
     info.innerHTML = '💡 Doble clic para editar · clic+<kbd>Shift</kbd> rango · <kbd>Ctrl+C</kbd> copiar · <kbd>Ctrl+V</kbd> pegar desde Excel · <kbd>Ctrl+Z</kbd> deshacer.';
 
-    // ── Barra de desplazamiento horizontal duplicada (arriba) ─────────────
+    // ── Barra de desplazamiento superior (FUERA del contenedor que hace scroll) ──
     var topScroll = document.createElement('div');
+    topScroll.id        = 'stTopBar';
     topScroll.className = 'st-top-scroll';
     var topInner = document.createElement('div');
     topInner.className = 'st-top-scroll-inner';
     topScroll.appendChild(topInner);
 
+    // ── Contenedor real del scroll (X e Y en el mismo div — necesario para sticky) ──
+    var tableScroll = document.createElement('div');
+    tableScroll.id        = 'stTableScroll';
+    tableScroll.className = 'st-table-scroll';
+    tableScroll.appendChild(table);
+
     wrap.innerHTML = '';
     wrap.appendChild(topScroll);
-    wrap.appendChild(table);
+    wrap.appendChild(tableScroll);
     wrap.appendChild(info);
 
-    // Sincronizar scroll superior ↔ inferior
-    var scrolling = false;
+    // Sincronizar scrollbars top ↔ tableScroll (sin bucle)
+    var syncing = false;
     topScroll.addEventListener('scroll', function() {
-        if (scrolling) return;
-        scrolling = true;
-        wrap.scrollLeft = topScroll.scrollLeft;
-        scrolling = false;
+        if (syncing) return; syncing = true;
+        tableScroll.scrollLeft = topScroll.scrollLeft;
+        syncing = false;
     });
-    wrap.addEventListener('scroll', function() {
-        if (scrolling) return;
-        scrolling = true;
-        topScroll.scrollLeft = wrap.scrollLeft;
-        scrolling = false;
+    tableScroll.addEventListener('scroll', function() {
+        if (syncing) return; syncing = true;
+        topScroll.scrollLeft = tableScroll.scrollLeft;
+        syncing = false;
     });
 
-    // Ajustar ancho del inner al ancho real de la tabla
-    // y top de la fila de filtros al alto de la cabecera
+    // Ajustar ancho del inner + top de filtros tras pintar
     requestAnimationFrame(function() {
         topInner.style.width  = table.scrollWidth + 'px';
         topInner.style.height = '1px';
         var firstTh = table.querySelector('thead tr:first-child th');
-        var hdr = firstTh ? (firstTh.getBoundingClientRect().height || 32) : 32;
+        var hdr = firstTh ? Math.round(firstTh.getBoundingClientRect().height) : 32;
         table.querySelectorAll('thead tr.st-filter-row th').forEach(function(th) {
             th.style.top = hdr + 'px';
         });
