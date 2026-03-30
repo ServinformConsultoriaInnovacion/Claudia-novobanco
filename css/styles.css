@@ -526,3 +526,33 @@ table.nb-table tr:hover td { background: #fafafa; }
   to   { opacity: 1; transform: translateY(0); }
 }
 .panel { animation: fadeIn 0.2s ease; }
+
+/* ── Staff table ──────────────────────────────────────────────── */
+table.staff-table { font-size: 12px; }
+table.staff-table th { padding: 6px 8px; font-size: 10px; }
+table.staff-table td { padding: 3px 6px; }
+table.staff-table tr:hover td { background: var(--nb-primary-light); }
+
+/* Celda seleccionada como origen de paste */
+table.staff-table td.st-sel {
+  outline: 2px solid var(--nb-primary);
+  outline-offset: -2px;
+  background: var(--nb-primary-light) !important;
+}
+
+/* Celda en modo edición */
+table.staff-table td:has(input),
+table.staff-table td:has(select) {
+  padding: 0;
+  background: var(--nb-white) !important;
+}
+
+kbd {
+  background: var(--nb-grey-bg);
+  border: 1px solid var(--nb-border);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 10px;
+  font-family: monospace;
+  color: var(--nb-text);
+}

@@ -13,6 +13,13 @@
 
 const NAV_ITEMS = [
     {
+        id:    'panelStaff',
+        icon:  '👥',
+        label: 'Staff',
+        sub:   'Plantilla · Agentes · Disponibilidad',
+        fase:  null
+    },
+    {
         id:    'panelA',
         icon:  '⚙️',
         label: 'Configuración',
@@ -56,7 +63,7 @@ const NAV_ITEMS = [
     }
 ];
 
-let _panelActivo = 'panelA';
+let _panelActivo = 'panelStaff';
 
 // ══════════════════════════════════════════════════════════════════════════
 //  INIT
@@ -150,6 +157,7 @@ function mostrarPanel(panelId) {
     main.scrollTop = 0;
 
     switch (panelId) {
+        case 'panelStaff': _renderPanelStaff(main); break;
         case 'panelA': _renderPanelA(main); break;
         case 'panelB': _renderPanelB(main); break;
         default:
@@ -158,8 +166,15 @@ function mostrarPanel(panelId) {
     }
 }
 
-// ══════════════════════════════════════════════════════════════════════════
-//  STUB — paneles de fases futuras
+// ══════════════════════════════════════════════════════════════════════════//  PANEL STAFF
+// ════════════════════════════════════════════════════════════════════════════
+
+function _renderPanelStaff(container) {
+    // Delega todo el renderizado a staff.js
+    renderModuloStaff(container);
+}
+
+// ════════════════════════════════════════════════════════════════════════════//  STUB — paneles de fases futuras
 // ══════════════════════════════════════════════════════════════════════════
 
 function _renderStub(container, item) {
