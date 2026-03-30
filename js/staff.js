@@ -157,6 +157,17 @@ function renderModuloStaff(container) {
     }
     // Recalcular activos al abrir (los datos pueden venir de localStorage)
     _stRecalcActivos();
+
+    // Ajustar top de la fila sticky de filtros al alto real de la cabecera
+    requestAnimationFrame(function() {
+        var tabla = document.getElementById('stTabla');
+        if (!tabla) return;
+        var firstTh = tabla.querySelector('thead tr:first-child th');
+        var h = firstTh ? (firstTh.getBoundingClientRect().height || 32) : 32;
+        tabla.querySelectorAll('thead tr.st-filter-row th').forEach(function(th) {
+            th.style.top = h + 'px';
+        });
+    });
 }
 
 // ── Panel de carga ────────────────────────────────────────────────────────
@@ -381,13 +392,12 @@ function _stRenderTabla(wrap) {
     table.id        = 'stTabla';
     table.tabIndex  = 0;
 
-    // — Cabecera —
+    // ── Cabecera fila 1: etiquetas ────────────────────────────────────────
     var thead = document.createElement('thead');
     var trH   = document.createElement('tr');
-    // Columna eliminar
-    var thAcc = document.createElement('th');
-    thAcc.style.cssText = 'width:36px;';
-    trH.appendChild(thAcc);
+    var thAcc0 = document.createElement('th');
+    thAcc0.style.cssText = 'width:42px;';
+    trH.appendChild(thAcc0);
 
     STAFF_COLS.forEach(function(col) {
         var th = document.createElement('th');
@@ -396,11 +406,55 @@ function _stRenderTabla(wrap) {
         trH.appendChild(th);
     });
     thead.appendChild(trH);
+
+    // ── Cabecera fila 2: filtros por columna estilo Excel ─────────────────
+    var trF = document.createElement('tr');
+    trF.className = 'st-filter-row';
+
+    var thFAcc = document.createElement('th');
+    var btnClear = document.createElement('button');
+    btnClear.className = 'btn-icon';
+    btnClear.title     = 'Limpiar todos los filtros';
+    btnClear.innerHTML = '✕';
+    btnClear.addEventListener('click', _stLimpiarFiltrosCol);
+    thFAcc.appendChild(btnClear);
+    trF.appendChild(thFAcc);
+
+    STAFF_COLS.forEach(function(col) {
+        var thF = document.createElement('th');
+        var filter;
+
+        // Con opciones cortas → <select>; resto → <input text>
+        if (col.tipo === 'select' || (col.opts && col.opts.length <= 20)) {
+            filter = document.createElement('select');
+            filter.className = 'st-col-filter';
+            var oAll = document.createElement('option');
+            oAll.value = ''; oAll.textContent = '(todo)';
+            filter.appendChild(oAll);
+            (col.opts || []).forEach(function(o) {
+                var opt = document.createElement('option');
+                opt.value = String(o); opt.textContent = String(o);
+                if (String(_stFiltrosCol[col.key] || '') === String(o)) opt.selected = true;
+                filter.appendChild(opt);
+            });
+        } else {
+            filter = document.createElement('input');
+            filter.type        = 'text';
+            filter.className   = 'st-col-filter';
+            filter.placeholder = '…';
+            filter.value       = _stFiltrosCol[col.key] || '';
+        }
+
+        filter.addEventListener('input',  function() { _stFiltrosCol[col.key] = filter.value; _stActualizarTbody(); });
+        filter.addEventListener('change', function() { _stFiltrosCol[col.key] = filter.value; _stActualizarTbody(); });
+        thF.appendChild(filter);
+        trF.appendChild(thF);
+    });
+    thead.appendChild(trF);
     table.appendChild(thead);
 
-    // — Cuerpo —
+    // ── Cuerpo ────────────────────────────────────────────────────────────
     var tbody = document.createElement('tbody');
-
     if (!filas.length) {
         var trV = document.createElement('tr');
         var tdV = document.createElement('td');
@@ -417,18 +471,51 @@ function _stRenderTabla(wrap) {
             tbody.appendChild(_stCrearFila(agente, realIdx));
         });
     }
-
     table.appendChild(tbody);
 
-    // Ayuda para paste
     var info = document.createElement('div');
     info.className = 'info-box';
     info.style.cssText = 'margin-top:10px;font-size:11px;';
-    info.innerHTML = '💡 <strong>Edición:</strong> doble clic para editar una celda · haz clic en una celda y <kbd>Ctrl+V</kbd> para pegar un rango desde Excel · Tab / Enter para confirmar.';
+    info.innerHTML = '💡 Doble clic para editar · clic+<kbd>Shift</kbd> rango · <kbd>Ctrl+C</kbd> copiar · <kbd>Ctrl+V</kbd> pegar desde Excel · <kbd>Ctrl+Z</kbd> deshacer.';
+
+    // ── Barra de desplazamiento horizontal duplicada (arriba) ─────────────
+    var topScroll = document.createElement('div');
+    topScroll.className = 'st-top-scroll';
+    var topInner = document.createElement('div');
+    topInner.className = 'st-top-scroll-inner';
+    topScroll.appendChild(topInner);
 
     wrap.innerHTML = '';
+    wrap.appendChild(topScroll);
     wrap.appendChild(table);
     wrap.appendChild(info);
+
+    // Sincronizar scroll superior ↔ inferior
+    var scrolling = false;
+    topScroll.addEventListener('scroll', function() {
+        if (scrolling) return;
+        scrolling = true;
+        wrap.scrollLeft = topScroll.scrollLeft;
+        scrolling = false;
+    });
+    wrap.addEventListener('scroll', function() {
+        if (scrolling) return;
+        scrolling = true;
+        topScroll.scrollLeft = wrap.scrollLeft;
+        scrolling = false;
+    });
+
+    // Ajustar ancho del inner al ancho real de la tabla
+    // y top de la fila de filtros al alto de la cabecera
+    requestAnimationFrame(function() {
+        topInner.style.width  = table.scrollWidth + 'px';
+        topInner.style.height = '1px';
+        var firstTh = table.querySelector('thead tr:first-child th');
+        var hdr = firstTh ? (firstTh.getBoundingClientRect().height || 32) : 32;
+        table.querySelectorAll('thead tr.st-filter-row th').forEach(function(th) {
+            th.style.top = hdr + 'px';
+        });
+    });
 }
 
 // ── Fila de la tabla ──────────────────────────────────────────────────────

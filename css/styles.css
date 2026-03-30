@@ -564,10 +564,47 @@ table.nb-table tr:hover td { background: #fafafa; }
 .panel { animation: fadeIn 0.2s ease; }
 
 /* ── Staff table ──────────────────────────────────────────────── */
-table.staff-table { font-size: 12px; }
+
+/* Contenedor: scroll horizontal en ambos extremos */
+#stTablaWrap {
+  overflow-x: auto;
+  overflow-y: visible;
+  position: relative;
+}
+
+/* Barra de desplazamiento horizontal superior (espejo) */
+.st-top-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  height: 12px;
+  margin-bottom: 2px;
+}
+.st-top-scroll::-webkit-scrollbar { height: 6px; }
+.st-top-scroll::-webkit-scrollbar-track { background: var(--nb-grey-bg); }
+.st-top-scroll::-webkit-scrollbar-thumb { background: var(--nb-border); border-radius: 3px; }
+
+table.staff-table { font-size: 12px; border-collapse: collapse; }
 table.staff-table th { padding: 6px 8px; font-size: 10px; }
 table.staff-table td { padding: 3px 6px; }
 table.staff-table tr:hover td { background: var(--nb-primary-light); }
+
+/* Cabecera pegajosa al desplazar verticalmente */
+table.staff-table thead th {
+  position: sticky;
+  z-index: 2;
+  background: var(--nb-grey-bg);
+}
+/* Fila 1 (etiquetas): top 0 */
+table.staff-table thead tr:first-child th {
+  top: 0;
+}
+/* Fila 2 (filtros): justo debajo de la fila 1 — se ajusta con JS */
+table.staff-table thead tr.st-filter-row th {
+  top: var(--st-header-h, 32px);
+  background: #F0F4F3;
+  border-bottom: 2px solid var(--nb-border);
+  padding: 3px 4px;
+}
 
 /* Celdas seleccionadas (rango) */
 table.staff-table td.st-sel {
@@ -586,12 +623,7 @@ table.staff-table td:has(select) {
 /* Icono de advertencia */
 .st-warn-icon { cursor: help; font-size: 12px; }
 
-/* Fila de filtros de columna */
-tr.st-filter-row th {
-  padding: 3px 4px;
-  background: #F0F4F3;
-  border-bottom: 2px solid var(--nb-border);
-}
+/* Filtros de columna */
 .st-col-filter {
   width: 100%;
   padding: 2px 4px;
@@ -607,6 +639,7 @@ tr.st-filter-row th {
 .st-col-filter:focus {
   outline: none;
   border-color: var(--nb-primary);
+  box-shadow: 0 0 0 2px rgba(59,179,154,.2);
 }
 
 /* Toolbar compacta de staff */
