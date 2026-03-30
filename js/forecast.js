@@ -56,28 +56,45 @@ function generarDemoData() {
         return false;
     }
     var patron = _patronHorario(franjas);
-    var lunes  = _getLunes(0);
+    // Generar 3 meses a partir del 1er día del mes actual
+    var hoy    = new Date();
+    var inicio = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
 
-    for (var d = 0; d < 28; d++) {
-        var fecha = _fecStr(_addDays(lunes, d));
-        var esFDS = (d % 7 === 5 || d % 7 === 6);
-        State.forecast.llamadas[fecha] = {};
-        State.forecast.aht[fecha]      = {};
+    State.forecast.llamadas = {};
+    State.forecast.aht      = {};
 
-        franjas.forEach(function(f) {
-            State.forecast.llamadas[fecha][f] = {};
-            State.forecast.aht[fecha][f]      = {};
-            servicios.forEach(function(svc) {
-                var base = esFDS ? 30 : 80;
-                var llam = Math.max(0, Math.round(
-                    base * (patron[f] || 0.05) * (0.75 + Math.random() * 0.5)
-                ));
-                var aht = Math.round(270 * (0.85 + Math.random() * 0.30));
-                State.forecast.llamadas[fecha][f][svc.id] = llam;
-                State.forecast.aht[fecha][f][svc.id]      = aht;
+    for (var m = 0; m < 3; m++) {
+        var primerMes = new Date(hoy.getFullYear(), hoy.getMonth() + m, 1);
+        var nDias     = new Date(hoy.getFullYear(), hoy.getMonth() + m + 1, 0).getDate();
+        for (var d = 1; d <= nDias; d++) {
+            var dia   = new Date(hoy.getFullYear(), hoy.getMonth() + m, d);
+            var fecha = _fecStr(dia);
+            var dow   = dia.getDay();
+            var esFDS = (dow === 0 || dow === 6);
+            State.forecast.llamadas[fecha] = {};
+            State.forecast.aht[fecha]      = {};
+
+            franjas.forEach(function(f) {
+                State.forecast.llamadas[fecha][f] = {};
+                State.forecast.aht[fecha][f]      = {};
+                servicios.forEach(function(svc) {
+                    var base = esFDS ? 30 : 80;
+                    var llam = Math.max(0, Math.round(
+                        base * (patron[f] || 0.05) * (0.75 + Math.random() * 0.5)
+                    ));
+                    var aht = Math.round(270 * (0.85 + Math.random() * 0.30));
+                    State.forecast.llamadas[fecha][f][svc.id] = llam;
+                    State.forecast.aht[fecha][f][svc.id]      = aht;
+                });
             });
-        });
+        }
     }
+
+    State.forecast.editado = false;
+    programarGuardado();
+    toast('Datos demo generados: 3 meses × ' + servicios.length + ' servicio/s', 'success');
+    return true;
+}
 
     State.forecast.editado = false;
     programarGuardado();

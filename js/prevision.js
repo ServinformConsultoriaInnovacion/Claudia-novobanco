@@ -23,7 +23,8 @@ var _pvMesOffset       = 0;        // offset mes para vista mensual (0 = mes act
 var _pvServicioActivo  = null;
 var _pvContainer       = null;   // referencia al div principal del módulo
 var _pvModo            = 'llamadas';   // 'llamadas' | 'aht'
-var _pvVista           = 'mes';         // 'mes' | 'semana'
+var _pvVista           = 'mes';        // 'mes' | 'semana'
+var _pvGranularidad    = '30min';      // '15min' | '30min' | '1h'
 
 // ══════════════════════════════════════════════════════════════════════════
 //  ENTRY POINT
@@ -140,11 +141,29 @@ function _pvRenderToolbar() {
         _pvRefrescar();
     });
 
+    // Selector granularidad
+    var selGran = document.createElement('select');
+    selGran.className = 'st-toolbar-btn btn btn-secondary btn-sm';
+    selGran.title = 'Granularidad de franjas';
+    selGran.style.cssText = 'padding:4px 6px;font-size:11px;cursor:pointer;';
+    [['15min', '15 min'], ['30min', '30 min'], ['1h', '1 hora']].forEach(function(op) {
+        var o = document.createElement('option');
+        o.value = op[0]; o.textContent = op[1];
+        if (op[0] === _pvGranularidad) o.selected = true;
+        selGran.appendChild(o);
+    });
+    selGran.addEventListener('change', function() {
+        _pvGranularidad = selGran.value;
+        var min = _pvGranularidad === '15min' ? 15 : _pvGranularidad === '1h' ? 60 : 30;
+        State.config.franjas = generarFranjas(8, 22, min);
+        _pvRefrescar();
+    });
+
     // Descarga Excel de ejemplo
     var btnEjemplo = document.createElement('button');
     btnEjemplo.className = 'st-toolbar-btn btn btn-secondary btn-sm';
     btnEjemplo.innerHTML = '📥 Ejemplo';
-    btnEjemplo.title = 'Descargar Excel de ejemplo con datos Mar–May 2026';
+    btnEjemplo.title = 'Descargar Excel de ejemplo (año 2026, 3 formatos de franja)';
     btnEjemplo.addEventListener('click', _pvDescargarEjemplo);
 
     tb.appendChild(zona);
@@ -152,6 +171,7 @@ function _pvRenderToolbar() {
     tb.appendChild(btnLimpiar);
     tb.appendChild(btnModo);
     tb.appendChild(btnVista);
+    tb.appendChild(selGran);
     tb.appendChild(btnEjemplo);
     tb.appendChild(sep);
     tb.appendChild(info);
@@ -451,10 +471,10 @@ function _pvCrearTablaMes(primerDia) {
         var tdDia = document.createElement('td');
         tdDia.className = 'f-td-franja';
         tdDia.style.cssText = 'font-size:11px;white-space:nowrap;min-width:60px;' +
-            (esFDS ? 'color:var(--nb-primary);' : '');
+            (esFDS ? 'color:#1a7a3a;font-weight:700;' : '');
         tdDia.innerHTML =
             '<span style="font-weight:700;">' + String(dia.getDate()).padStart(2,'0') + '</span>' +
-            '<span style="color:var(--nb-text-light);margin-left:3px;">' + DIAS_ES[dow] + '</span>';
+            '<span style="margin-left:3px;' + (esFDS ? '' : 'color:var(--nb-text-light);') + '">' + DIAS_ES[dow] + '</span>';
         tr.appendChild(tdDia);
 
         var rowTotal = 0;
@@ -693,6 +713,7 @@ function _pvCrearTablaSemana(lunes) {
 
         var rowTotal = 0, rowAhtSum = 0, rowAhtN = 0;
         fechas.forEach(function(fecha, di) {
+            var esDieFDS = (di === 5 || di === 6);
             var llam = _getLlam(fecha, franja, svcId);
             var aht  = _getAHT(fecha, franja, svcId);
             colTotalsL[di] += llam;
@@ -704,7 +725,8 @@ function _pvCrearTablaSemana(lunes) {
                 grandAhtSum   += aht; grandAhtN++;
             }
             var td = document.createElement('td');
-            td.style.cssText = 'cursor:pointer;text-align:right;padding:4px 6px;font-size:12px;min-width:62px;';
+            td.style.cssText = 'cursor:pointer;text-align:right;padding:4px 6px;font-size:12px;min-width:62px;' +
+                (esDieFDS ? 'background:#f0faf3;' : '');
             td.dataset.fecha  = fecha;
             td.dataset.franja = franja;
             td.dataset.svcid  = svcId;
@@ -764,59 +786,78 @@ function _pvCrearTablaSemana(lunes) {
 //                    "AHT"      (Fecha|Franja|Servicio|AHT)
 // ══════════════════════════════════════════════════════════════════════════
 
-function _pvDescargarEjemplo() {
-    var servicios = State.config.servicios.length
-        ? State.config.servicios
-        : [{ nombre: 'Servicio 1', id: 'svc1' }];
-    var franjas = State.config.franjas.length
-        ? State.config.franjas
-        : ['09:00','09:30','10:00','10:30','11:00','11:30','12:00','12:30',
-           '13:00','13:30','14:00','14:30','15:00','15:30','16:00','16:30',
-           '17:00','17:30','18:00','18:30','19:00','19:30','20:00','20:30'];
+// ── Helpers internos del generador de ejemplo ────────────────────────────
 
-    // Patrón de carga por hora  (factor × llamadas base)
-    function patron(hora) {
-        if (hora >= 10 && hora < 12) return 1.4;
-        if (hora >= 15 && hora < 17) return 1.2;
-        if (hora >=  9 && hora < 13) return 1.0;
-        if (hora >= 13 && hora < 18) return 0.85;
-        if (hora >= 18 && hora < 20) return 0.55;
-        return 0.3;
-    }
-    // Pseudo-random determinista (sin Math.random para reproducibilidad)
-    function prnd(d, fi, si) { return ((d * 13 + fi * 7 + si * 3) % 97) / 97; }
+function _pvPatronEjemplo(hora) {
+    if (hora >= 10 && hora < 12) return 1.4;
+    if (hora >= 15 && hora < 17) return 1.2;
+    if (hora >=  9 && hora < 13) return 1.0;
+    if (hora >= 13 && hora < 18) return 0.85;
+    if (hora >= 18 && hora < 20) return 0.55;
+    return 0.3;
+}
+function _pvPrnd(seed) { return ((seed * 1664525 + 1013904223) & 0x7fffffff) / 0x7fffffff; }
 
-    var rowsLlam = [['Fecha', 'Franja', 'Servicio', 'Llamadas']];
-    var rowsAHT  = [['Fecha', 'Franja', 'Servicio', 'AHT']];
+/**
+ * Construye una hoja transpuesta:
+ *   col 0 = "Día", col 1..N = franja, fila i = un día del año
+ * @param {string[]} franjas  - array de strings HH:MM
+ * @param {string}   tipo     - 'llamadas' | 'aht'
+ * @param {string}   svcNombre
+ */
+function _pvHojaTranspuesta(franjas, tipo, svcNombre) {
+    // Cabecera
+    var header = ['Día'].concat(franjas);
+    var rows   = [header];
 
-    [2, 3, 4].forEach(function(mes0) {   // 0-indexed: 2=marzo, 3=abril, 4=mayo
-        var nDias = new Date(2026, mes0 + 1, 0).getDate();
+    for (var m = 0; m < 12; m++) {
+        var nDias = new Date(2026, m + 1, 0).getDate();
         for (var d = 1; d <= nDias; d++) {
-            var dow  = new Date(2026, mes0, d).getDay();
+            var dia  = new Date(2026, m, d);
+            var dow  = dia.getDay();
             var fds  = (dow === 0 || dow === 6);
-            var str  = '2026-' + String(mes0 + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+            var str  = '2026-' + String(m + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+            var fila = [str];
             franjas.forEach(function(franja, fi) {
-                var h    = parseInt(franja, 10);
-                var f    = patron(h) * (fds ? 0.4 : 1.0);
-                servicios.forEach(function(svc, si) {
-                    var r    = prnd(d + mes0 * 31, fi, si);
-                    var llam = Math.round((20 + r * 20) * f);
-                    var aht  = Math.round(200 + (1 - r) * 80 - f * 30);
-                    if (llam > 0) {
-                        rowsLlam.push([str, franja, svc.nombre, llam]);
-                        rowsAHT.push([str, franja, svc.nombre, Math.max(60, aht)]);
-                    }
-                });
+                var h    = parseInt(franja, 10) + (parseInt(franja.slice(3), 10) / 60);
+                var f    = _pvPatronEjemplo(h) * (fds ? 0.4 : 1.0);
+                var seed = d * 1000 + fi + m * 40000;
+                var r    = _pvPrnd(seed);
+                var val;
+                if (tipo === 'llamadas') {
+                    val = Math.round((18 + r * 22) * f);
+                } else {
+                    val = Math.max(60, Math.round(200 + (1 - r) * 80 - f * 30));
+                    if (!Math.round((18 + r * 22) * f)) val = 0; // sin llamadas → sin AHT
+                }
+                fila.push(val || null);
             });
+            rows.push(fila);
         }
-    });
+    }
+    return rows;
+}
+
+function _pvDescargarEjemplo() {
+    var svcNombre = (State.config.servicios.length ? State.config.servicios[0].nombre : 'Servicio');
+    var configs   = [
+        { label: '30min', min: 30 },
+        { label: '15min', min: 15 },
+        { label: '1h',    min: 60 }
+    ];
 
     var wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rowsLlam), 'Llamadas');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rowsAHT),  'AHT');
+    configs.forEach(function(cfg) {
+        var fr = generarFranjas(8, 22, cfg.min);
+        var wsL = XLSX.utils.aoa_to_sheet(_pvHojaTranspuesta(fr, 'llamadas', svcNombre));
+        var wsA = XLSX.utils.aoa_to_sheet(_pvHojaTranspuesta(fr, 'aht',      svcNombre));
+        XLSX.utils.book_append_sheet(wb, wsL, 'Llamadas_' + cfg.label);
+        XLSX.utils.book_append_sheet(wb, wsA, 'AHT_'      + cfg.label);
+    });
+
     var buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-    saveAs(new Blob([buf], { type: 'application/octet-stream' }), 'prevision_ejemplo_mar-may2026.xlsx');
-    toast('Excel de ejemplo descargado (Mar–May 2026)', 'success');
+    saveAs(new Blob([buf], { type: 'application/octet-stream' }), 'prevision_ejemplo_2026.xlsx');
+    toast('Excel de ejemplo descargado (año 2026 · 15min / 30min / 1h)', 'success');
 }
 
 // ══════════════════════════════════════════════════════════════════════════
