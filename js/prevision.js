@@ -388,10 +388,16 @@ function _pvCrearTablaMes(primerDia) {
     table.appendChild(thead);
 
     // ── Cuerpo: una fila por día ──────────────────────────────────────
+    var esAHT        = (modo === 'aht');
     var DIAS_ES      = ['Do','Lu','Ma','Mi','Ju','Vi','Sá'];
     var tbody        = document.createElement('tbody');
-    var franjaTotals = new Array(franjas.length).fill(0);
-    var grandTotal   = 0;
+    // acumuladores llamadas (siempre) y AHT (para promedios en modo AHT)
+    var franjaTotals    = new Array(franjas.length).fill(0);
+    var franjaAhtSum    = new Array(franjas.length).fill(0);
+    var franjaAhtN      = new Array(franjas.length).fill(0);
+    var grandTotal      = 0;
+    var grandAhtSum     = 0;
+    var grandAhtN       = 0;
 
     dias.forEach(function(dia) {
         var fechaStr = _fecStr(dia);
@@ -412,12 +418,18 @@ function _pvCrearTablaMes(primerDia) {
         tr.appendChild(tdDia);
 
         var rowTotal = 0;
+        var rowAhtSum = 0, rowAhtN = 0;
         franjas.forEach(function(franja, fi) {
             var llam = _getLlam(fechaStr, franja, svcId);
             var aht  = _getAHT(fechaStr, franja, svcId);
             franjaTotals[fi] += llam;
             rowTotal          += llam;
             grandTotal        += llam;
+            if (aht > 0) {
+                franjaAhtSum[fi] += aht; franjaAhtN[fi]++;
+                rowAhtSum        += aht; rowAhtN++;
+                grandAhtSum      += aht; grandAhtN++;
+            }
 
             var td = document.createElement('td');
             td.style.cssText = 'cursor:pointer;text-align:right;padding:3px 4px;font-size:11px;';
@@ -441,10 +453,14 @@ function _pvCrearTablaMes(primerDia) {
             tr.appendChild(td);
         });
 
-        // Columna total fila
+        // Columna total / promedio AHT fila
         var tdTot = document.createElement('td');
         tdTot.style.cssText = 'font-size:11px;font-weight:700;background:rgba(0,0,0,0.04);text-align:right;padding:3px 5px;';
-        tdTot.textContent = rowTotal ? fmtNum(rowTotal) : '—';
+        if (esAHT) {
+            tdTot.textContent = rowAhtN ? Math.round(rowAhtSum / rowAhtN) + ' s' : '—';
+        } else {
+            tdTot.textContent = rowTotal ? fmtNum(rowTotal) : '—';
+        }
         tr.appendChild(tdTot);
         tbody.appendChild(tr);
     });
@@ -455,17 +471,25 @@ function _pvCrearTablaMes(primerDia) {
     var tdTotLabel = document.createElement('td');
     tdTotLabel.className = 'f-td-franja';
     tdTotLabel.style.fontSize = '11px';
-    tdTotLabel.textContent = 'TOTAL';
+    tdTotLabel.textContent = esAHT ? 'Ø AHT' : 'TOTAL';
     trTot.appendChild(tdTotLabel);
-    franjaTotals.forEach(function(t) {
+    franjas.forEach(function(franja, fi) {
         var td = document.createElement('td');
         td.style.cssText = 'font-size:10px;text-align:right;padding:3px 4px;';
-        td.textContent = t ? fmtNum(t) : '—';
+        if (esAHT) {
+            td.textContent = franjaAhtN[fi] ? Math.round(franjaAhtSum[fi] / franjaAhtN[fi]) + ' s' : '—';
+        } else {
+            td.textContent = franjaTotals[fi] ? fmtNum(franjaTotals[fi]) : '—';
+        }
         trTot.appendChild(td);
     });
     var tdGrand = document.createElement('td');
     tdGrand.style.cssText = 'font-size:11px;text-align:right;padding:3px 5px;';
-    tdGrand.textContent = grandTotal ? fmtNum(grandTotal) : '—';
+    if (esAHT) {
+        tdGrand.textContent = grandAhtN ? Math.round(grandAhtSum / grandAhtN) + ' s' : '—';
+    } else {
+        tdGrand.textContent = grandTotal ? fmtNum(grandTotal) : '—';
+    }
     trTot.appendChild(tdGrand);
     tbody.appendChild(trTot);
     table.appendChild(tbody);
