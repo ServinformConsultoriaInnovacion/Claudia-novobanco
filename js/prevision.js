@@ -11,16 +11,15 @@
  *  - Tabs de servicio (multi-servicio)
  *
  * Depende de: state.js, parser.js, forecast.js (utilidades: generarDemoData,
- *             renderResumenStaff, _fecStr, _getLunes, _addDays, _fmtRangoSemana,
- *             _DIAS_SHORT, _getLlam, _getAHT, _renderCelda, _editarCelda,
- *             _calcularTotalesSemana, _fOnPaste, fmtNum)
+ *             _fecStr, _getLunes, _addDays, _getLlam, _getAHT, _fOnPaste, fmtNum)
  */
 
 'use strict';
 
 // ── Estado interno del módulo ─────────────────────────────────────────────
 
-var _pvSemanaOffset    = 0;
+var _pvSemanaOffset    = 0;        // offset semana relativa (para paste vía forecast.js)
+var _pvMesOffset       = 0;        // offset mes para vista mensual (0 = mes actual)
 var _pvServicioActivo  = null;
 var _pvContainer       = null;   // referencia al div principal del módulo
 var _pvModo            = 'llamadas';   // 'llamadas' | 'aht'
@@ -180,17 +179,19 @@ function _pvActualizarStats(el) {
     var nDias = Object.keys(State.forecast.llamadas).length;
 
     grid.innerHTML =
-        _pvStatCard('Total llamadas', totalLlam ? fmtNum(totalLlam) : '—', true) +
-        _pvStatCard('Media / día',    nDias ? fmtNum(Math.round(totalLlam / nDias)) : '—', false) +
-        _pvStatCard('AHT medio',      nAHT ? fmtNum(Math.round(totalAHT / nAHT)) + ' s' : '—', false) +
-        _pvStatCard('Pico',           pico ? (fmtNum(pico) + ' @ ' + picoPer) : '—', false) +
-        _pvStatCard('Días con datos', nDias || '—', false);
+        _pvStatCard('Total llamadas', totalLlam ? fmtNum(totalLlam) : '—', '', true) +
+        _pvStatCard('Media / día',    nDias ? fmtNum(Math.round(totalLlam / nDias)) : '—', '', false) +
+        _pvStatCard('AHT medio',      nAHT ? fmtNum(Math.round(totalAHT / nAHT)) + ' s' : '—', '', false) +
+        _pvStatCard('Pico',           pico ? fmtNum(pico) : '—', pico ? '@ ' + picoPer : '', false) +
+        _pvStatCard('Días con datos', nDias || '—', '', false);
 }
 
-function _pvStatCard(label, value, accent) {
+function _pvStatCard(label, value, sub, accent) {
     return '<div class="stat-card' + (accent ? ' accent' : '') + '">' +
         '<div class="stat-label">' + label + '</div>' +
-        '<div class="stat-value">' + value + '</div></div>';
+        '<div class="stat-value">' + value + '</div>' +
+        (sub ? '<div style="font-size:10px;color:var(--nb-text-light);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + sub + '</div>' : '') +
+        '</div>';
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -234,27 +235,18 @@ function _pvRenderTablaPanelInner(wrap) {
         wrap.appendChild(tabs);
     }
 
-    // ── Navegación de semana ──────────────────────────────────────────
-    var lunes = _getLunes(_pvSemanaOffset);
+    // ── Navegación de mes ─────────────────────────────────────────────
+    var primerDia = _pvGetPrimerDiaMes(_pvMesOffset);
     var nav = document.createElement('div');
     nav.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;';
     nav.innerHTML =
         '<button class="btn btn-secondary btn-sm" id="pvBtnAnt">◀</button>' +
-        '<span style="font-weight:700;font-size:13px;flex:1;text-align:center;" id="pvRangoLabel">' + _fmtRangoSemana(lunes) + '</span>' +
+        '<span style="font-weight:700;font-size:13px;flex:1;text-align:center;text-transform:capitalize;" id="pvRangoLabel">' + _pvFmtMes(primerDia) + '</span>' +
         '<button class="btn btn-secondary btn-sm" id="pvBtnHoy">Hoy</button>' +
         '<button class="btn btn-secondary btn-sm" id="pvBtnSig">▶</button>';
-    nav.querySelector('#pvBtnAnt').onclick = function() {
-        _pvSemanaOffset--; _fSemanaOffset = _pvSemanaOffset;
-        _pvRenderTablaPanelInner(wrap);
-    };
-    nav.querySelector('#pvBtnSig').onclick = function() {
-        _pvSemanaOffset++; _fSemanaOffset = _pvSemanaOffset;
-        _pvRenderTablaPanelInner(wrap);
-    };
-    nav.querySelector('#pvBtnHoy').onclick = function() {
-        _pvSemanaOffset = 0; _fSemanaOffset = 0;
-        _pvRenderTablaPanelInner(wrap);
-    };
+    nav.querySelector('#pvBtnAnt').onclick = function() { _pvMesOffset--; _pvRenderTablaPanelInner(wrap); };
+    nav.querySelector('#pvBtnSig').onclick = function() { _pvMesOffset++; _pvRenderTablaPanelInner(wrap); };
+    nav.querySelector('#pvBtnHoy').onclick = function() { _pvMesOffset = 0; _pvRenderTablaPanelInner(wrap); };
     wrap.appendChild(nav);
 
     // ── Badge modo ────────────────────────────────────────────────────
@@ -265,18 +257,18 @@ function _pvRenderTablaPanelInner(wrap) {
         ';color:#fff;">' + (_pvModo === 'llamadas' ? '📞 Llamadas' : '⏱ AHT (seg)') + '</span>';
     wrap.appendChild(modoBadge);
 
-    // ── Sin datos para esta semana ────────────────────────────────────
-    if (!_pvHayDatosSemana(lunes)) {
+    // ── Sin datos para este mes ───────────────────────────────────────
+    if (!_pvHayDatosMes(primerDia)) {
         var aviso = document.createElement('div');
         aviso.style.cssText = 'text-align:center;padding:32px;color:var(--nb-text-light);font-size:13px;' +
             'border:2px dashed var(--nb-border);border-radius:8px;margin-bottom:8px;';
-        aviso.innerHTML = 'No hay datos para esta semana.<br>' +
+        aviso.innerHTML = 'No hay datos para este mes.<br>' +
             '<span style="font-size:11px;">Sube un Excel o pulsa <strong>Demo</strong> para generar datos de prueba.</span>';
         wrap.appendChild(aviso);
         return;
     }
 
-    // ── Tabla doble scroll (igual que Staff) ──────────────────────────
+    // ── Tabla doble scroll ────────────────────────────────────────────
     var fWrap = document.createElement('div');
 
     var fTopBar = document.createElement('div');
@@ -289,7 +281,7 @@ function _pvRenderTablaPanelInner(wrap) {
     var fTableScroll = document.createElement('div');
     fTableScroll.id        = 'fTableScroll';
     fTableScroll.className = 'f-table-scroll';
-    var fTable = _pvCrearTabla(lunes);
+    var fTable = _pvCrearTablaMes(primerDia);
     fTableScroll.appendChild(fTable);
 
     fWrap.appendChild(fTopBar);
@@ -312,23 +304,6 @@ function _pvRenderTablaPanelInner(wrap) {
         fTopInner.style.width  = fTable.scrollWidth + 'px';
         fTopInner.style.height = '1px';
     });
-
-    // ── Totales / chips ───────────────────────────────────────────────
-    var tot = _calcularTotalesSemana(lunes);
-    if (tot) {
-        // sincronizar contexto de _calcularTotalesSemana que usa _fServicioActivo
-        _fServicioActivo = _pvServicioActivo;
-        var resRow = document.createElement('div');
-        resRow.style.cssText = 'display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;';
-        resRow.innerHTML =
-            _pvChip('Total semana', fmtNum(tot.totalLlam)) +
-            _pvChip('Media / día',  fmtNum(Math.round(tot.mediaDiaria))) +
-            (_pvModo === 'llamadas'
-                ? _pvChip('AHT medio', fmtNum(Math.round(tot.ahtMedio)) + ' s')
-                : '') +
-            _pvChip('Pico', fmtNum(tot.pico) + ' @ ' + tot.picoPeriodo);
-        wrap.appendChild(resRow);
-    }
 
     // ── Banner ediciones manuales ─────────────────────────────────────
     if (State.forecast.editado) {
@@ -355,102 +330,141 @@ function _pvRenderTablaPanelInner(wrap) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-//  TABLA
+//  HELPERS DE MES
 // ══════════════════════════════════════════════════════════════════════════
 
-function _pvCrearTabla(lunes) {
+function _pvGetPrimerDiaMes(offset) {
+    var hoy = new Date();
+    return new Date(hoy.getFullYear(), hoy.getMonth() + offset, 1);
+}
+
+function _pvFmtMes(primerDia) {
+    var meses = ['enero','febrero','marzo','abril','mayo','junio',
+                 'julio','agosto','septiembre','octubre','noviembre','diciembre'];
+    return meses[primerDia.getMonth()] + ' ' + primerDia.getFullYear();
+}
+
+// Calcula el offset de semana relativa para que _fOnPaste funcione correctamente
+function _pvSemOffsetDeFecha(fechaStr) {
+    var parts    = fechaStr.split('-');
+    var dia      = new Date(+parts[0], +parts[1] - 1, +parts[2]);
+    var dow      = dia.getDay();
+    var diff     = (dow === 0 ? -6 : 1 - dow);
+    var lunesDia = new Date(dia.getTime() + diff * 86400000);
+    var lunesHoy = _getLunes(0);
+    return Math.round((lunesDia.getTime() - lunesHoy.getTime()) / (7 * 86400000));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  TABLA MENSUAL  (filas = días · columnas = franjas)
+// ══════════════════════════════════════════════════════════════════════════
+
+function _pvCrearTablaMes(primerDia) {
     var franjas = State.config.franjas;
     var svcId   = _pvServicioActivo;
     var modo    = _pvModo;
-    var fechas  = [];
-    for (var d = 0; d < 7; d++) fechas.push(_fecStr(_addDays(lunes, d)));
+
+    // Días del mes
+    var nDias = new Date(primerDia.getFullYear(), primerDia.getMonth() + 1, 0).getDate();
+    var dias  = [];
+    for (var d = 0; d < nDias; d++) {
+        dias.push(new Date(primerDia.getFullYear(), primerDia.getMonth(), d + 1));
+    }
 
     var table = document.createElement('table');
     table.id        = 'fTabla';
     table.className = 'nb-table f-table';
 
-    // ── Cabecera ──────────────────────────────────────────────────────
+    // ── Cabecera: esquina + una th por franja + Total ─────────────────
     var thead = document.createElement('thead');
     var trH   = document.createElement('tr');
-    trH.innerHTML = '<th class="f-th-corner">Franja</th>';
-    fechas.forEach(function(f, i) {
-        var esFDS = (i === 5 || i === 6);
-        var dDate = _addDays(lunes, i);
-        trH.innerHTML += '<th class="f-th-day' + (esFDS ? ' f-th-fds' : '') + '" data-fecha="' + f + '">' +
-            _DIAS_SHORT[i] + '<br>' +
-            '<span style="font-weight:400;font-size:10px;">' + dDate.getDate() + '/' + (dDate.getMonth() + 1) + '</span>';
-        // Columna sin datos: indicador visual
-        var hayDia = !!State.forecast.llamadas[f];
-        if (!hayDia) trH.innerHTML += '<br><span style="font-size:9px;color:var(--nb-text-light);">sin datos</span>';
-        trH.innerHTML += '</th>';
+    trH.innerHTML = '<th class="f-th-corner" style="min-width:60px;">Día</th>';
+    franjas.forEach(function(franja) {
+        trH.innerHTML += '<th class="f-th-day" style="min-width:44px;font-size:10px;font-weight:700;padding:4px 3px;">' +
+            franja + '</th>';
     });
-    trH.innerHTML += '<th class="f-th-day">Total</th>';
+    trH.innerHTML += '<th class="f-th-day" style="min-width:50px;">Total</th>';
     thead.appendChild(trH);
     table.appendChild(thead);
 
-    // ── Cuerpo ────────────────────────────────────────────────────────
-    var tbody = document.createElement('tbody');
-    var colTotals = new Array(7).fill(0);
-    var grandTotal = 0;
+    // ── Cuerpo: una fila por día ──────────────────────────────────────
+    var DIAS_ES      = ['Do','Lu','Ma','Mi','Ju','Vi','Sá'];
+    var tbody        = document.createElement('tbody');
+    var franjaTotals = new Array(franjas.length).fill(0);
+    var grandTotal   = 0;
 
-    franjas.forEach(function(franja) {
+    dias.forEach(function(dia) {
+        var fechaStr = _fecStr(dia);
+        var dow      = dia.getDay();
+        var esFDS    = (dow === 0 || dow === 6);
+
         var tr = document.createElement('tr');
+        if (esFDS) tr.style.background = 'var(--nb-grey-bg)';
 
-        // Columna fija de franja
-        var tdF = document.createElement('td');
-        tdF.className = 'f-td-franja';
-        tdF.textContent = franja;
-        tr.appendChild(tdF);
+        // Celda día (sticky left)
+        var tdDia = document.createElement('td');
+        tdDia.className = 'f-td-franja';
+        tdDia.style.cssText = 'font-size:11px;white-space:nowrap;min-width:60px;' +
+            (esFDS ? 'color:var(--nb-primary);' : '');
+        tdDia.innerHTML =
+            '<span style="font-weight:700;">' + String(dia.getDate()).padStart(2,'0') + '</span>' +
+            '<span style="color:var(--nb-text-light);margin-left:3px;">' + DIAS_ES[dow] + '</span>';
+        tr.appendChild(tdDia);
 
         var rowTotal = 0;
-        fechas.forEach(function(fecha, di) {
-            var llam = _getLlam(fecha, franja, svcId);
-            var aht  = _getAHT(fecha, franja, svcId);
-            colTotals[di] += llam;
-            rowTotal       += llam;
-            grandTotal     += llam;
+        franjas.forEach(function(franja, fi) {
+            var llam = _getLlam(fechaStr, franja, svcId);
+            var aht  = _getAHT(fechaStr, franja, svcId);
+            franjaTotals[fi] += llam;
+            rowTotal          += llam;
+            grandTotal        += llam;
 
             var td = document.createElement('td');
-            td.style.cssText = 'cursor:pointer;font-size:12px;padding:5px 8px;vertical-align:top;min-width:72px;';
-            td.dataset.fecha  = fecha;
+            td.style.cssText = 'cursor:pointer;text-align:right;padding:3px 4px;font-size:11px;';
+            td.dataset.fecha  = fechaStr;
             td.dataset.franja = franja;
             td.dataset.svcid  = svcId;
             td.dataset.modo   = modo;
             _pvRenderCelda(td, llam, aht, modo);
-            td.title = 'Clic para seleccionar · doble clic para editar';
+            td.title = franja + ' · ' + fechaStr + ' — doble clic para editar';
 
             td.addEventListener('click', function() {
                 var prev = document.querySelector('#fTabla td.f-sel');
                 if (prev) prev.classList.remove('f-sel');
                 td.classList.add('f-sel');
                 _fSelCelda = { fecha: td.dataset.fecha, franja: td.dataset.franja };
+                // Sync semana para que Ctrl+V paste funcione correctamente
+                _pvSemanaOffset = _pvSemOffsetDeFecha(td.dataset.fecha);
+                _fSemanaOffset  = _pvSemanaOffset;
             });
             td.addEventListener('dblclick', function() { _pvEditarCelda(td); });
             tr.appendChild(td);
         });
 
+        // Columna total fila
         var tdTot = document.createElement('td');
-        tdTot.style.cssText = 'font-size:12px;font-weight:700;background:var(--nb-grey-bg);text-align:right;padding:5px 8px;';
+        tdTot.style.cssText = 'font-size:11px;font-weight:700;background:rgba(0,0,0,0.04);text-align:right;padding:3px 5px;';
         tdTot.textContent = rowTotal ? fmtNum(rowTotal) : '—';
         tr.appendChild(tdTot);
         tbody.appendChild(tr);
     });
 
-    // ── Fila totales ──────────────────────────────────────────────────
+    // ── Fila totales (sticky bottom) ──────────────────────────────────
     var trTot = document.createElement('tr');
-    trTot.style.cssText = 'background:var(--nb-grey-bg);font-weight:700;';
+    trTot.style.cssText = 'background:var(--nb-grey-bg);font-weight:700;position:sticky;bottom:0;z-index:1;';
     var tdTotLabel = document.createElement('td');
     tdTotLabel.className = 'f-td-franja';
+    tdTotLabel.style.fontSize = '11px';
     tdTotLabel.textContent = 'TOTAL';
     trTot.appendChild(tdTotLabel);
-    colTotals.forEach(function(t) {
+    franjaTotals.forEach(function(t) {
         var td = document.createElement('td');
-        td.style.cssText = 'font-size:12px;text-align:right;padding:5px 8px;';
+        td.style.cssText = 'font-size:10px;text-align:right;padding:3px 4px;';
         td.textContent = t ? fmtNum(t) : '—';
         trTot.appendChild(td);
     });
     var tdGrand = document.createElement('td');
-    tdGrand.style.cssText = 'font-size:12px;text-align:right;padding:5px 8px;';
+    tdGrand.style.cssText = 'font-size:11px;text-align:right;padding:3px 5px;';
     tdGrand.textContent = grandTotal ? fmtNum(grandTotal) : '—';
     trTot.appendChild(tdGrand);
     tbody.appendChild(trTot);
@@ -460,19 +474,13 @@ function _pvCrearTabla(lunes) {
 
 function _pvRenderCelda(td, llam, aht, modo) {
     if (modo === 'aht') {
-        if (aht > 0) {
-            td.innerHTML = '<span style="display:block;font-weight:700;color:var(--nb-dark);">' + aht + ' s</span>' +
-                '<span style="font-size:10px;color:var(--nb-text-light);">' + (llam || 0) + ' llam</span>';
-        } else {
-            td.innerHTML = '<span style="color:#ddd;">—</span>';
-        }
+        td.innerHTML = aht > 0
+            ? '<span style="font-weight:700;">' + aht + '</span>'
+            : '<span style="color:#ddd;">—</span>';
     } else {
-        if (llam > 0) {
-            td.innerHTML = '<span style="display:block;font-weight:700;">' + fmtNum(llam) + '</span>' +
-                '<span style="font-size:10px;color:var(--nb-text-light);">' + aht + ' s</span>';
-        } else {
-            td.innerHTML = '<span style="color:#ddd;">—</span>';
-        }
+        td.innerHTML = llam > 0
+            ? '<span style="font-weight:700;">' + fmtNum(llam) + '</span>'
+            : '<span style="color:#ddd;">—</span>';
     }
 }
 
@@ -555,9 +563,11 @@ function _pvEditarCelda(td) {
 
 // ── Comprobación de datos para semana actual ──────────────────────────────
 
-function _pvHayDatosSemana(lunes) {
-    for (var d = 0; d < 7; d++) {
-        if (State.forecast.llamadas[_fecStr(_addDays(lunes, d))]) return true;
+function _pvHayDatosMes(primerDia) {
+    var nDias = new Date(primerDia.getFullYear(), primerDia.getMonth() + 1, 0).getDate();
+    for (var d = 0; d < nDias; d++) {
+        var f = _fecStr(new Date(primerDia.getFullYear(), primerDia.getMonth(), d + 1));
+        if (State.forecast.llamadas[f]) return true;
     }
     return false;
 }
