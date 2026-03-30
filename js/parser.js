@@ -175,60 +175,110 @@ function _procesarWorkbook(wb) {
 
 function _parsearSTAFF(rows) {
     if (!rows.length) return 0;
-    var headers = rows[0].map(function(h) { return h !== null && h !== undefined ? String(h) : ''; });
+    var headers = rows[0].map(function(h) {
+        return h !== null && h !== undefined ? String(h).trim().toUpperCase() : '';
+    });
 
+    function ci() {
+        var args = Array.prototype.slice.call(arguments);
+        for (var i = 0; i < args.length; i++) {
+            var idx = headers.indexOf(args[i].toUpperCase());
+            if (idx >= 0) return idx;
+        }
+        return -1;
+    }
+
+    // Mapa de columnas con nombres reales del fichero novobanco + alias de compatibilidad
     var COL = {
-        codigo:   _findColIdx(headers, 'Código', 'Codigo', 'ID', 'Cód', 'Cod'),
-        nombre:   _findColIdx(headers, 'Nombre', 'Name', 'Agente'),
-        servicio: _findColIdx(headers, 'Servicio', 'Service', 'Cola'),
-        turno:    _findColIdx(headers, 'Turno', 'Shift', 'Contrato'),
-        tipo:     _findColIdx(headers, 'Tipo', 'NF/7D', 'Disponibilidad'),
-        it_fin:   _findColIdx(headers, 'IT_fin', 'IT fin', 'IT', 'Baja'),
-        estado:   _findColIdx(headers, 'Estado', 'Status', 'Situación', 'Situacion')
+        codigo:       ci('CODIGO PRODUCTOR', 'CÓDIGO PRODUCTOR', 'CODIGO', 'ID', 'COD'),
+        horas:        ci('HORAS', 'HORAS JORNADA'),
+        tipoTurno:    ci('TIPO TURNO', 'TURNO', 'SHIFT', 'CONTRATO'),
+        inicioTurno:  ci('INICIO TURNO', 'INICIO', 'START'),
+        finTurno:     ci('FIN DE TURNO', 'FIN TURNO', 'FIN', 'END'),
+        inicioTurno2: ci('INICIO TURNO 2'),
+        finTurno2:    ci('FIN TURNO 2'),
+        inicioTurno3: ci('INICIO TURNO 3'),
+        finTurno3:    ci('FIN TURNO 3'),
+        inicioTurno4: ci('INICIO TURNO 4'),
+        finTurno4:    ci('FIN TURNO 4'),
+        horarioPartido: ci('HORARIO PARTIDO', 'HORARIO'),
+        disponibilidad: ci('DISPONIBILIDAD', 'TIPO', 'NF/7D'),
+        sede:         ci('SEDE', 'LOCATION', 'UBICACION', 'UBICACIÓN'),
+        estado:       ci('ESTADO', 'STATUS', 'SITUACIÓN', 'SITUACION'),
+        finAusencia:  ci('FIN AUSENCIA', 'IT_FIN', 'IT FIN', 'IT', 'BAJA'),
+        servicio:     ci('SERVICIO', 'SERVICE', 'COLA')
     };
 
-    // Buscar columnas de VAC, DLF, FEST (hasta 4 de cada)
-    ['vac', 'dlf', 'fest'].forEach(function(tipo) {
-        COL[tipo] = [1, 2, 3, 4].map(function(n) {
-            return _findColIdx(headers,
-                tipo.toUpperCase() + n,
-                tipo.charAt(0).toUpperCase() + tipo.slice(1) + n,
-                tipo + '_' + n, tipo + n
-            );
-        }).filter(function(i) { return i >= 0; });
+    // Pares inicio/fin vacaciones
+    [1, 2, 3, 4].forEach(function(n) {
+        COL['inicioVac' + n] = ci('INICIO VAC ' + n, 'VAC' + n + ' INICIO', 'INICIO VACACIONES ' + n);
+        COL['finVac'    + n] = ci('FIN VAC '    + n, 'VAC' + n + ' FIN',    'FIN VACACIONES '    + n);
     });
+
+    // DLF 1-6
+    [1, 2, 3, 4, 5, 6].forEach(function(n) {
+        COL['dlf' + n] = ci('DLF ' + n, 'DLF' + n);
+    });
+
+    // FESTIVOS 1-6
+    [1, 2, 3, 4, 5, 6].forEach(function(n) {
+        COL['fest' + n] = ci('FESTIVO ' + n, 'FEST ' + n, 'FESTIVO' + n, 'FEST' + n);
+    });
+
+    function strVal(row, key) {
+        var idx = COL[key];
+        return idx >= 0 ? String(row[idx] || '').trim() : '';
+    }
+    function dateVal(row, key) {
+        var idx = COL[key];
+        return idx >= 0 ? _toDateStr(row[idx]) : null;
+    }
 
     var agentes = [];
     for (var r = 1; r < rows.length; r++) {
         var row = rows[r];
         if (!row || !row.length) continue;
-        var codigo = COL.codigo >= 0
-            ? String(row[COL.codigo] || '').trim()
-            : 'AG_' + r;
-        if (!codigo || codigo === '') continue;
+        var codigo = strVal(row, 'codigo') || ('AG_' + r);
+        if (codigo === '') continue;
 
+        var svcStr = strVal(row, 'servicio');
         var agente = {
-            codigo:     codigo,
-            nombre:     COL.nombre   >= 0 ? String(row[COL.nombre]   || '').trim() : '',
-            servicio:   COL.servicio >= 0 ? String(row[COL.servicio] || '').trim() : '',
-            servicioId: null,
-            turno:      COL.turno    >= 0 ? String(row[COL.turno]    || '').trim() : '',
-            tipo:       COL.tipo     >= 0 ? String(row[COL.tipo]     || '').trim() : 'NF',
-            it_fin:     COL.it_fin   >= 0 ? _toDateStr(row[COL.it_fin])            : null,
-            estado:     COL.estado   >= 0 ? String(row[COL.estado]   || '').trim() : '',
-            vac:        COL.vac.map(function(i)  { return _toDateStr(row[i]); }).filter(Boolean),
-            dlf:        COL.dlf.map(function(i)  { return _toDateStr(row[i]); }).filter(Boolean),
-            fest:       COL.fest.map(function(i) { return _toDateStr(row[i]); }).filter(Boolean)
+            codigo:       codigo,
+            horas:        strVal(row, 'horas'),
+            tipoTurno:    strVal(row, 'tipoTurno'),
+            inicioTurno:  strVal(row, 'inicioTurno'),
+            finTurno:     strVal(row, 'finTurno'),
+            inicioTurno2: strVal(row, 'inicioTurno2'),
+            finTurno2:    strVal(row, 'finTurno2'),
+            inicioTurno3: strVal(row, 'inicioTurno3'),
+            finTurno3:    strVal(row, 'finTurno3'),
+            inicioTurno4: strVal(row, 'inicioTurno4'),
+            finTurno4:    strVal(row, 'finTurno4'),
+            horarioPartido: strVal(row, 'horarioPartido'),
+            disponibilidad: strVal(row, 'disponibilidad') || 'NF',
+            sede:           strVal(row, 'sede'),
+            estado:         strVal(row, 'estado') || 'ACTIVO',
+            finAusencia:    dateVal(row, 'finAusencia'),
+            servicio:       svcStr,
+            servicioId:     _resolverSvcId(svcStr),
+            inicioVac1: dateVal(row, 'inicioVac1'), finVac1: dateVal(row, 'finVac1'),
+            inicioVac2: dateVal(row, 'inicioVac2'), finVac2: dateVal(row, 'finVac2'),
+            inicioVac3: dateVal(row, 'inicioVac3'), finVac3: dateVal(row, 'finVac3'),
+            inicioVac4: dateVal(row, 'inicioVac4'), finVac4: dateVal(row, 'finVac4'),
+            dlf1: dateVal(row, 'dlf1'), dlf2: dateVal(row, 'dlf2'),
+            dlf3: dateVal(row, 'dlf3'), dlf4: dateVal(row, 'dlf4'),
+            dlf5: dateVal(row, 'dlf5'), dlf6: dateVal(row, 'dlf6'),
+            fest1: dateVal(row, 'fest1'), fest2: dateVal(row, 'fest2'),
+            fest3: dateVal(row, 'fest3'), fest4: dateVal(row, 'fest4'),
+            fest5: dateVal(row, 'fest5'), fest6: dateVal(row, 'fest6')
         };
-        agente.servicioId = _resolverSvcId(agente.servicio);
         agentes.push(agente);
     }
 
+    var inactivo = ['IT', 'MAT', 'PAT', 'LACT', 'EXC', 'PR', 'P.DTO'];
     State.staff.todos   = agentes;
     State.staff.activos = agentes.filter(function(a) {
-        if (a.it_fin) return false;
-        var est = (a.estado || '').toUpperCase();
-        return !['MAT', 'PAT', 'LACT', 'EXC', 'PR', 'IT'].includes(est);
+        return !inactivo.includes((a.estado || '').toUpperCase());
     });
 
     return agentes.length;

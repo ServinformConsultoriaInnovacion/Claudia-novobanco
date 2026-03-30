@@ -13,33 +13,60 @@
 
 // ── Constantes ────────────────────────────────────────────────────────────
 
-var STAFF_TURNOS  = ['FIJO', 'ROTATIVO_2', 'ROTATIVO_3', 'ROTATIVO_4', 'PARTIDO', 'IRR_25', 'IRR_28'];
-var STAFF_TIPOS   = ['NF', '7D'];
-var STAFF_ESTADOS = ['', 'IT', 'MAT', 'PAT', 'LACT', 'P.DTO', 'PR', 'EXC'];
+// Valores reales extraídos del Excel de novobanco
+var STAFF_TURNOS         = ['ROTATIVO', 'ROTATIVO X 3', 'ROTATIVO X 4', 'PARTIDO', 'PARTIDO IRR 31h', 'IRR 25h', 'IRR 28h'];
+var STAFF_DISPONIBILIDADES = ['NF', '7D'];
+var STAFF_ESTADOS        = ['ACTIVO', 'IT', 'MAT', 'PAT', 'LACT', 'P.DTO', 'PR', 'EXC'];
+var STAFF_SEDES          = ['TORREJON', 'VALLADOLID'];
 
-/** Definición de columnas: clave, cabecera, tipo de editor, ancho en px */
+/**
+ * Definición de columnas.
+ * grupo: agrupa columnas con separación visual en la cabecera.
+ */
 var STAFF_COLS = [
-    { key: 'codigo',   label: 'Código',    tipo: 'text',   req: true,  w: 90  },
-    { key: 'nombre',   label: 'Nombre',    tipo: 'text',   req: true,  w: 160 },
-    { key: 'servicio', label: 'Servicio',  tipo: 'svc',    req: true,  w: 150 },
-    { key: 'turno',    label: 'Turno',     tipo: 'tlist',  req: false, w: 130 },
-    { key: 'tipo',     label: 'NF / 7D',   tipo: 'select', req: false, w: 80,
-      opts: ['NF', '7D'] },
-    { key: 'estado',   label: 'Estado',    tipo: 'select', req: false, w: 100,
-      opts: STAFF_ESTADOS },
-    { key: 'it_fin',   label: 'IT hasta',  tipo: 'date',   req: false, w: 110 },
-    { key: 'vac1',     label: 'VAC 1',     tipo: 'date',   req: false, w: 110 },
-    { key: 'vac2',     label: 'VAC 2',     tipo: 'date',   req: false, w: 110 },
-    { key: 'vac3',     label: 'VAC 3',     tipo: 'date',   req: false, w: 110 },
-    { key: 'vac4',     label: 'VAC 4',     tipo: 'date',   req: false, w: 110 },
-    { key: 'dlf1',     label: 'DLF 1',     tipo: 'date',   req: false, w: 110 },
-    { key: 'dlf2',     label: 'DLF 2',     tipo: 'date',   req: false, w: 110 },
-    { key: 'dlf3',     label: 'DLF 3',     tipo: 'date',   req: false, w: 110 },
-    { key: 'dlf4',     label: 'DLF 4',     tipo: 'date',   req: false, w: 110 },
-    { key: 'fest1',    label: 'FEST 1',    tipo: 'date',   req: false, w: 110 },
-    { key: 'fest2',    label: 'FEST 2',    tipo: 'date',   req: false, w: 110 },
-    { key: 'fest3',    label: 'FEST 3',    tipo: 'date',   req: false, w: 110 },
-    { key: 'fest4',    label: 'FEST 4',    tipo: 'date',   req: false, w: 110 }
+    // ── Identificación
+    { key: 'codigo',         label: 'CODIGO PRODUCTOR', grupo: 'Identificación', tipo: 'text',   req: true,  w: 110 },
+    { key: 'servicio',       label: 'Servicio',          grupo: 'Identificación', tipo: 'svc',    req: false, w: 150 },
+    { key: 'sede',           label: 'SEDE',              grupo: 'Identificación', tipo: 'tlist',  req: false, w: 110, opts: STAFF_SEDES },
+    // ── Turno
+    { key: 'horas',          label: 'HORAS',             grupo: 'Turno',          tipo: 'text',   req: false, w: 75  },
+    { key: 'tipoTurno',      label: 'TIPO TURNO',        grupo: 'Turno',          tipo: 'tlist',  req: false, w: 140, opts: STAFF_TURNOS },
+    { key: 'inicioTurno',    label: 'INICIO TURNO',      grupo: 'Turno',          tipo: 'text',   req: false, w: 95  },
+    { key: 'finTurno',       label: 'FIN DE TURNO',      grupo: 'Turno',          tipo: 'text',   req: false, w: 95  },
+    { key: 'inicioTurno2',   label: 'INICIO TURNO 2',    grupo: 'Turno',          tipo: 'text',   req: false, w: 95  },
+    { key: 'finTurno2',      label: 'FIN TURNO 2',       grupo: 'Turno',          tipo: 'text',   req: false, w: 95  },
+    { key: 'inicioTurno3',   label: 'INICIO TURNO 3',    grupo: 'Turno',          tipo: 'text',   req: false, w: 95  },
+    { key: 'finTurno3',      label: 'FIN TURNO 3',       grupo: 'Turno',          tipo: 'text',   req: false, w: 95  },
+    { key: 'inicioTurno4',   label: 'INICIO TURNO 4',    grupo: 'Turno',          tipo: 'text',   req: false, w: 95  },
+    { key: 'finTurno4',      label: 'FIN TURNO 4',       grupo: 'Turno',          tipo: 'text',   req: false, w: 95  },
+    { key: 'horarioPartido', label: 'HORARIO PARTIDO',   grupo: 'Turno',          tipo: 'text',   req: false, w: 200 },
+    // ── Disponibilidad
+    { key: 'disponibilidad', label: 'DISPONIBILIDAD',    grupo: 'Disponibilidad', tipo: 'select', req: false, w: 115, opts: STAFF_DISPONIBILIDADES },
+    { key: 'estado',         label: 'ESTADO',            grupo: 'Disponibilidad', tipo: 'select', req: false, w: 100, opts: STAFF_ESTADOS },
+    { key: 'finAusencia',    label: 'FIN AUSENCIA',      grupo: 'Disponibilidad', tipo: 'date',   req: false, w: 110 },
+    // ── Vacaciones (pares inicio/fin)
+    { key: 'inicioVac1',     label: 'INICIO VAC 1',      grupo: 'Vacaciones',     tipo: 'date',   req: false, w: 105 },
+    { key: 'finVac1',        label: 'FIN VAC 1',         grupo: 'Vacaciones',     tipo: 'date',   req: false, w: 105 },
+    { key: 'inicioVac2',     label: 'INICIO VAC 2',      grupo: 'Vacaciones',     tipo: 'date',   req: false, w: 105 },
+    { key: 'finVac2',        label: 'FIN VAC 2',         grupo: 'Vacaciones',     tipo: 'date',   req: false, w: 105 },
+    { key: 'inicioVac3',     label: 'INICIO VAC 3',      grupo: 'Vacaciones',     tipo: 'date',   req: false, w: 105 },
+    { key: 'finVac3',        label: 'FIN VAC 3',         grupo: 'Vacaciones',     tipo: 'date',   req: false, w: 105 },
+    { key: 'inicioVac4',     label: 'INICIO VAC 4',      grupo: 'Vacaciones',     tipo: 'date',   req: false, w: 105 },
+    { key: 'finVac4',        label: 'FIN VAC 4',         grupo: 'Vacaciones',     tipo: 'date',   req: false, w: 105 },
+    // ── DLF (6 días)
+    { key: 'dlf1',           label: 'DLF 1',             grupo: 'DLF',            tipo: 'date',   req: false, w: 100 },
+    { key: 'dlf2',           label: 'DLF 2',             grupo: 'DLF',            tipo: 'date',   req: false, w: 100 },
+    { key: 'dlf3',           label: 'DLF 3',             grupo: 'DLF',            tipo: 'date',   req: false, w: 100 },
+    { key: 'dlf4',           label: 'DLF 4',             grupo: 'DLF',            tipo: 'date',   req: false, w: 100 },
+    { key: 'dlf5',           label: 'DLF 5',             grupo: 'DLF',            tipo: 'date',   req: false, w: 100 },
+    { key: 'dlf6',           label: 'DLF 6',             grupo: 'DLF',            tipo: 'date',   req: false, w: 100 },
+    // ── Festivos (6)
+    { key: 'fest1',          label: 'FESTIVO 1',         grupo: 'Festivos',       tipo: 'date',   req: false, w: 100 },
+    { key: 'fest2',          label: 'FESTIVO 2',         grupo: 'Festivos',       tipo: 'date',   req: false, w: 100 },
+    { key: 'fest3',          label: 'FESTIVO 3',         grupo: 'Festivos',       tipo: 'date',   req: false, w: 100 },
+    { key: 'fest4',          label: 'FESTIVO 4',         grupo: 'Festivos',       tipo: 'date',   req: false, w: 100 },
+    { key: 'fest5',          label: 'FESTIVO 5',         grupo: 'Festivos',       tipo: 'date',   req: false, w: 100 },
+    { key: 'fest6',          label: 'FESTIVO 6',         grupo: 'Festivos',       tipo: 'date',   req: false, w: 100 }
 ];
 
 // ── Estado interno del módulo ─────────────────────────────────────────────
@@ -479,21 +506,42 @@ function _stAsegurarDatalistTurnos() {
 
 // ── Get / Set valor de agente ────────────────────────────────────────────
 
+// ── Factoría de agente vacío ──────────────────────────────────────────────
+
+function _crearAgente() {
+    var svcDef = State.config.servicios[0] || null;
+    return {
+        codigo: '', servicio: svcDef ? svcDef.nombre : '',
+        servicioId: svcDef ? svcDef.id : null,
+        sede: '', horas: '', tipoTurno: '',
+        inicioTurno: '', finTurno: '',
+        inicioTurno2: '', finTurno2: '',
+        inicioTurno3: '', finTurno3: '',
+        inicioTurno4: '', finTurno4: '',
+        horarioPartido: '', disponibilidad: 'NF',
+        estado: 'ACTIVO', finAusencia: null,
+        inicioVac1: null, finVac1: null,
+        inicioVac2: null, finVac2: null,
+        inicioVac3: null, finVac3: null,
+        inicioVac4: null, finVac4: null,
+        dlf1: null, dlf2: null, dlf3: null,
+        dlf4: null, dlf5: null, dlf6: null,
+        fest1: null, fest2: null, fest3: null,
+        fest4: null, fest5: null, fest6: null
+    };
+}
+
 function _stGetVal(agente, key) {
     if (key === 'servicio') {
         var svc = State.config.servicios.find(function(s) { return s.id === agente.servicioId; });
         return svc ? svc.nombre : (agente.servicio || '');
     }
-    if (key.startsWith('vac'))  return (agente.vac  || [])[parseInt(key.slice(3)) - 1] || '';
-    if (key.startsWith('dlf'))  return (agente.dlf  || [])[parseInt(key.slice(3)) - 1] || '';
-    if (key.startsWith('fest')) return (agente.fest || [])[parseInt(key.slice(4)) - 1] || '';
     var v = agente[key];
-    return v !== null && v !== undefined ? v : '';
+    return (v !== null && v !== undefined) ? v : '';
 }
 
 function _stSetVal(agente, key, val) {
     val = (val || '').trim();
-
     if (key === 'servicio') {
         var svc = State.config.servicios.find(function(s) {
             return _norm(s.nombre) === _norm(val) || s.id === val;
@@ -502,27 +550,7 @@ function _stSetVal(agente, key, val) {
         agente.servicio   = svc ? svc.nombre : val;
         return;
     }
-
-    if (key.startsWith('vac')) {
-        if (!Array.isArray(agente.vac)) agente.vac = [];
-        agente.vac[parseInt(key.slice(3)) - 1] = val || null;
-        agente.vac = agente.vac.filter(Boolean);
-        return;
-    }
-    if (key.startsWith('dlf')) {
-        if (!Array.isArray(agente.dlf)) agente.dlf = [];
-        agente.dlf[parseInt(key.slice(3)) - 1] = val || null;
-        agente.dlf = agente.dlf.filter(Boolean);
-        return;
-    }
-    if (key.startsWith('fest')) {
-        if (!Array.isArray(agente.fest)) agente.fest = [];
-        agente.fest[parseInt(key.slice(4)) - 1] = val || null;
-        agente.fest = agente.fest.filter(Boolean);
-        return;
-    }
-
-    agente[key] = val || (key === 'tipo' ? 'NF' : '');
+    agente[key] = val || null;
 }
 
 // ── Estado chip ────────────────────────────────────────────────────────────
@@ -561,20 +589,7 @@ function _stGetFiltradas() {
 // ── Añadir / Eliminar fila ────────────────────────────────────────────────
 
 function _stAgregarFila() {
-    var svcDefecto = State.config.servicios[0] || null;
-    State.staff.todos.push({
-        codigo:     '',
-        nombre:     '',
-        servicio:   svcDefecto ? svcDefecto.nombre : '',
-        servicioId: svcDefecto ? svcDefecto.id : null,
-        turno:      'FIJO',
-        tipo:       'NF',
-        it_fin:     null,
-        estado:     '',
-        vac:        [],
-        dlf:        [],
-        fest:       []
-    });
+    State.staff.todos.push(_crearAgente());
     _stRecalcActivos();
     _stActualizar();
     programarGuardado();
@@ -596,8 +611,8 @@ function _stEliminarFila(realIdx) {
 function _stRecalcActivos() {
     var inactivo = ['IT', 'MAT', 'PAT', 'LACT', 'EXC', 'PR', 'P.DTO'];
     State.staff.activos = State.staff.todos.filter(function(a) {
-        if (a.it_fin) return false;
-        return !inactivo.includes((a.estado || '').toUpperCase());
+        var est = (a.estado || '').toUpperCase();
+        return est !== 'IT' && !inactivo.includes(est);
     });
 }
 
@@ -674,13 +689,7 @@ function _stOnPaste(e) {
 
         // Si se pega más allá del final → añadir filas
         if (rowIdx >= State.staff.todos.length) {
-            var svcDef = State.config.servicios[0] || null;
-            State.staff.todos.push({
-                codigo: '', nombre: '',
-                servicio: svcDef ? svcDef.nombre : '', servicioId: svcDef ? svcDef.id : null,
-                turno: '', tipo: 'NF', it_fin: null, estado: '',
-                vac: [], dlf: [], fest: []
-            });
+            State.staff.todos.push(_crearAgente());
         }
 
         var agente = State.staff.todos[rowIdx];
@@ -701,54 +710,168 @@ function _stOnPaste(e) {
 
 // ── Descarga plantilla Excel ───────────────────────────────────────────────
 
+/**
+ * Descarga la plantilla STAFF usando ExcelJS para formateo completo:
+ * - Cabecera grupo (fila 1): fondo por grupo, bold, texto blanco
+ * - Cabecera campo (fila 2): fondo --nb-primary, bold, texto blanco
+ * - Fila de ejemplo (fila 3): gris claro, itálica
+ * - Freeze primera fila + primera columna
+ * - Anchos de columna optimizados
+ * - Hoja Instrucciones con tabla formateada
+ */
 function descargarPlantillaStaff() {
-    var headers = STAFF_COLS.map(function(c) { return c.label; });
+    // ExcelJS está cargado en la página
+    var wb  = new ExcelJS.Workbook();
+    var ws  = wb.addWorksheet('STAFF', { views: [{ state: 'frozen', xSplit: 1, ySplit: 2 }] });
 
-    // Fila de ejemplo comentada
-    var ejemplo = [
-        'AG001', 'Nombre de Agente', 'Atención al Cliente',
-        'FIJO', 'NF', '', '',
-        '', '', '', '',  // VAC1-4
-        '', '', '', '',  // DLF1-4
-        '', '', '', ''   // FEST1-4
-    ];
+    // ── Paleta de colores por grupo ───────────────────────────────────────
+    var GRUPO_COLOR = {
+        'Identificación': '2A9080',  // verde oscuro
+        'Turno':          '0056C8',  // azul
+        'Disponibilidad': '7B3FA0',  // morado
+        'Vacaciones':     'E87000',  // naranja
+        'DLF':            '00873D',  // verde
+        'Festivos':       'E30613'   // rojo
+    };
+    var COLOR_HEADER = '3BB39A';  // --nb-primary
+    var COLOR_EJEMPLO = 'F4F8F7'; // --nb-grey-bg
 
-    var ws = XLSX.utils.aoa_to_sheet([headers, ejemplo]);
-    ws['!cols'] = STAFF_COLS.map(function(c) { return { wch: Math.round(c.w / 6.5) }; });
+    // ── Fila 1: grupos (celdas combinadas) ───────────────────────────────
+    var grupoActual = null;
+    var grupoStart  = 1;
+    var grupos = []; // [{ nombre, inicio, fin }]
+    STAFF_COLS.forEach(function(col, i) {
+        if (col.grupo !== grupoActual) {
+            if (grupoActual !== null) grupos.push({ nombre: grupoActual, inicio: grupoStart, fin: i });
+            grupoActual = col.grupo;
+            grupoStart  = i + 1;
+        }
+    });
+    grupos.push({ nombre: grupoActual, inicio: grupoStart, fin: STAFF_COLS.length });
 
-    // Estilos básicos de cabecera (solo funciona con SheetJS Pro; se ignore en libre)
-    var range = XLSX.utils.decode_range(ws['!ref']);
-    for (var C = range.s.c; C <= range.e.c; C++) {
-        var addr = XLSX.utils.encode_cell({ r: 0, c: C });
-        if (!ws[addr]) continue;
-        ws[addr].s = { font: { bold: true }, fill: { fgColor: { rgb: '3BB39A' } } };
+    var fila1 = ws.getRow(1);
+    grupos.forEach(function(g) {
+        var cell = fila1.getCell(g.inicio);
+        cell.value = g.nombre.toUpperCase();
+        var bg = GRUPO_COLOR[g.nombre] || '888888';
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + bg } };
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        if (g.fin > g.inicio) ws.mergeCells(1, g.inicio, 1, g.fin);
+    });
+    fila1.height = 20;
+
+    // ── Fila 2: cabeceras de campo ────────────────────────────────────────
+    var fila2 = ws.getRow(2);
+    STAFF_COLS.forEach(function(col, i) {
+        var cell = fila2.getCell(i + 1);
+        cell.value = col.label;
+        cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + COLOR_HEADER } };
+        cell.font  = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
+        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false };
+        cell.border = {
+            bottom: { style: 'medium', color: { argb: 'FF2A9080' } }
+        };
+        if (col.req) cell.font = { bold: true, color: { argb: 'FFFFFFEE' }, size: 10,
+            underline: true };
+    });
+    fila2.height = 22;
+
+    // ── Fila 3: ejemplo ──────────────────────────────────────────────────
+    var ejemploAgt = {
+        codigo: '49274', servicio: 'Atención al Cliente', sede: 'TORREJON',
+        horas: '07:00', tipoTurno: 'ROTATIVO', inicioTurno: '07:00', finTurno: '14:00',
+        inicioTurno2: '', finTurno2: '', inicioTurno3: '', finTurno3: '',
+        inicioTurno4: '', finTurno4: '', horarioPartido: '',
+        disponibilidad: 'NF', estado: 'ACTIVO', finAusencia: '',
+        inicioVac1: '2026-07-01', finVac1: '2026-07-15',
+        inicioVac2: '', finVac2: '', inicioVac3: '', finVac3: '',
+        inicioVac4: '', finVac4: '',
+        dlf1: '2026-05-02', dlf2: '', dlf3: '', dlf4: '', dlf5: '', dlf6: '',
+        fest1: '2026-04-17', fest2: '', fest3: '', fest4: '', fest5: '', fest6: ''
+    };
+    var fila3 = ws.getRow(3);
+    STAFF_COLS.forEach(function(col, i) {
+        var cell = fila3.getCell(i + 1);
+        cell.value = _stGetVal(ejemploAgt, col.key) || '';
+        cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF4F8F7' } };
+        cell.font  = { italic: true, color: { argb: 'FF6B8A82' }, size: 10 };
+        cell.alignment = { horizontal: 'center' };
+    });
+
+    // Nota en celda A3
+    var notaCell = fila3.getCell(1);
+    notaCell.value = '← EJEMPLO (borrar antes de usar)';
+    notaCell.font  = { italic: true, bold: true, color: { argb: 'FFE87000' }, size: 9 };
+
+    // ── Anchos de columna ────────────────────────────────────────────────
+    ws.columns = STAFF_COLS.map(function(col) {
+        return { width: Math.max(Math.round(col.w / 6.8), 10) };
+    });
+
+    // ── Filas 4+ vacías con alternado de color ────────────────────────────
+    for (var r = 4; r <= 13; r++) {
+        var fr = ws.getRow(r);
+        if (r % 2 === 0) {
+            for (var c = 1; c <= STAFF_COLS.length; c++) {
+                fr.getCell(c).fill = { type: 'pattern', pattern: 'solid',
+                    fgColor: { argb: 'FFFAFCFB' } };
+            }
+        }
+        fr.height = 18;
     }
 
-    var wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'STAFF');
+    // ── Hoja Instrucciones ────────────────────────────────────────────────
+    var wsI = wb.addWorksheet('Instrucciones');
+    var instrTitulo = wsI.getRow(1);
+    instrTitulo.getCell(1).value = 'Instrucciones de relleno — Plantilla STAFF Claudia novobanco';
+    instrTitulo.getCell(1).font  = { bold: true, size: 13, color: { argb: 'FF2A9080' } };
+    wsI.mergeCells(1, 1, 1, 4);
 
-    // Hoja de instrucciones
-    var instrHeaders = ['Campo', 'Obligatorio', 'Descripción', 'Valores válidos'];
-    var instrRows = [
-        ['Código',    'Sí', 'Identificador único del agente', 'Texto libre (sin duplicados)'],
-        ['Nombre',    'Sí', 'Nombre completo del agente',     'Texto libre'],
-        ['Servicio',  'Sí', 'Servicio al que pertenece',      'Debe coincidir con los servicios configurados en la app'],
-        ['Turno',     'No', 'Tipo de turno asignado',         STAFF_TURNOS.join(' | ')],
-        ['NF / 7D',   'No', 'Disponibilidad en fines de semana y festivos', 'NF (no festivos)  |  7D (todos los días)'],
-        ['Estado',    'No', 'Situación actual del agente',    STAFF_ESTADOS.filter(Boolean).join(' | ')],
-        ['IT hasta',  'No', 'Fecha fin de IT (dejar vacío si no aplica)', 'YYYY-MM-DD'],
-        ['VAC 1-4',   'No', 'Períodos de vacaciones (fecha individual)', 'YYYY-MM-DD'],
-        ['DLF 1-4',   'No', 'Días libres de fondo',           'YYYY-MM-DD'],
-        ['FEST 1-4',  'No', 'Festivos personales acordados',  'YYYY-MM-DD']
+    var instrCabs = wsI.getRow(2);
+    ['Campo', 'Requerido', 'Descripción', 'Valores válidos / Formato'].forEach(function(h, i) {
+        var cell = instrCabs.getCell(i + 1);
+        cell.value = h;
+        cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF3BB39A' } };
+        cell.font  = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
+        cell.alignment = { horizontal: 'center' };
+    });
+
+    var instrData = [
+        ['CODIGO PRODUCTOR', 'Sí',  'Identificador único del agente',             'Texto libre (sin duplicados)'],
+        ['Servicio',          'No', 'Servicio al que pertenece (multi-servicio)',  'Debe coincidir con nombre de servicio configurado en la app'],
+        ['SEDE',              'No', 'Ubicación física del agente',                STAFF_SEDES.join(' | ')],
+        ['HORAS',             'No', 'Horas de jornada diaria',                   'HH:MM (ej: 07:00 ó 07:48)'],
+        ['TIPO TURNO',        'No', 'Tipo de contrato / rotación',               STAFF_TURNOS.join(' | ')],
+        ['INICIO / FIN TURNO','No', 'Hora de inicio y fin del turno principal',  'HH:MM (ej: 07:00)'],
+        ['INICIO / FIN TURNO 2/3/4', 'No', 'Horas de turnos adicionales (rotativos)', 'HH:MM'],
+        ['HORARIO PARTIDO',   'No', 'Descripción del horario partido',           'Ej: 09:00-14:00/16:00-19:00'],
+        ['DISPONIBILIDAD',    'No', 'Días disponibles (fin de semana/festivos)',  STAFF_DISPONIBILIDADES.join(' | ')],
+        ['ESTADO',            'No', 'Situación laboral actual',                  STAFF_ESTADOS.join(' | ')],
+        ['FIN AUSENCIA',      'No', 'Fin de IT / MAT / baja (si aplica)',        'YYYY-MM-DD'],
+        ['INICIO/FIN VAC 1-4','No', 'Períodos de vacaciones (inicio y fin)',     'YYYY-MM-DD'],
+        ['DLF 1-6',           'No', 'Días Libres de Fondo',                      'YYYY-MM-DD'],
+        ['FESTIVO 1-6',       'No', 'Festivos personales acordados',             'YYYY-MM-DD']
     ];
-    var wsI = XLSX.utils.aoa_to_sheet([instrHeaders].concat(instrRows));
-    wsI['!cols'] = [{ wch: 14 }, { wch: 12 }, { wch: 42 }, { wch: 55 }];
-    XLSX.utils.book_append_sheet(wb, wsI, 'Instrucciones');
+    instrData.forEach(function(row, ri) {
+        var fr = wsI.getRow(ri + 3);
+        row.forEach(function(val, ci) { fr.getCell(ci + 1).value = val; });
+        if (ri % 2 === 0)
+            for (var ci = 1; ci <= 4; ci++)
+                fr.getCell(ci).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF4F8F7' } };
+        fr.height = 18;
+    });
+    wsI.columns = [{ width: 26 }, { width: 10 }, { width: 50 }, { width: 65 }];
+    wsI.getRow(2).height = 20;
 
-    var buf  = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
-    var blob = new Blob([buf], { type: 'application/octet-stream' });
-    saveAs(blob, 'plantilla_staff_claudia_novobanco.xlsx');
-    toast('Plantilla descargada', 'success');
+    // ── Generar y descargar ───────────────────────────────────────────────
+    wb.xlsx.writeBuffer().then(function(buf) {
+        var blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        saveAs(blob, 'plantilla_staff_claudia_novobanco.xlsx');
+        toast('Plantilla descargada con formato completo', 'success');
+    }).catch(function(e) {
+        toast('Error al generar la plantilla: ' + e.message, 'error');
+    });
 }
 
 // ── Datos demo ────────────────────────────────────────────────────────────
@@ -760,28 +883,44 @@ function generarDemoStaff() {
         return;
     }
 
-    var nombres = [
-        'Ana López', 'Javier Ruiz', 'María García', 'Carlos Pérez', 'Laura Sánchez',
-        'Pedro Martínez', 'Isabel Fernández', 'Antonio González', 'Carmen Díaz', 'Miguel Torres',
-        'Rosa Morales', 'Francisco Jiménez', 'Elena Castillo', 'Manuel Romero', 'Lucía Navarro',
-        'Jorge Hernández', 'Patricia Vega', 'Raúl Blanco', 'Pilar Santos', 'Alberto Ríos'
+    var codigos = [
+        '49274','48354','53011','54609','53626','51200','50431','48901',
+        '52314','47800','51899','54123','49500','53777','48220',
+        '50100','51456','52983','47302','54890'
     ];
-    var turnos = ['FIJO', 'ROTATIVO_2', 'ROTATIVO_4', 'PARTIDO'];
+    var turnos  = STAFF_TURNOS;
+    var sedes   = STAFF_SEDES;
 
-    State.staff.todos = nombres.map(function(nom, i) {
-        var svc = servicios[i % servicios.length];
+    State.staff.todos = codigos.map(function(cod, i) {
+        var svc    = servicios[i % servicios.length];
+        var turno  = turnos[i % turnos.length];
+        var estado = i === 3 ? 'IT' : (i === 7 ? 'MAT' : 'ACTIVO');
         return {
-            codigo:     'AG' + String(i + 1).padStart(3, '0'),
-            nombre:     nom,
-            servicio:   svc.nombre,
-            servicioId: svc.id,
-            turno:      turnos[i % turnos.length],
-            tipo:       i % 3 === 0 ? '7D' : 'NF',
-            it_fin:     null,
-            estado:     i === 3 ? 'IT' : (i === 7 ? 'MAT' : ''),
-            vac:        [],
-            dlf:        [],
-            fest:       []
+            codigo:         cod,
+            servicio:       svc.nombre,
+            servicioId:     svc.id,
+            sede:           sedes[i % sedes.length],
+            horas:          (i % 3 === 0) ? '07:00' : '07:48',
+            tipoTurno:      turno,
+            inicioTurno:    '07:00',
+            finTurno:       (i % 2 === 0) ? '14:00' : '15:00',
+            inicioTurno2:   turno.startsWith('ROTATIVO') ? '14:00' : '',
+            finTurno2:      turno.startsWith('ROTATIVO') ? '21:00' : '',
+            inicioTurno3:   turno === 'ROTATIVO X 3' ? '21:00' : '',
+            finTurno3:      turno === 'ROTATIVO X 3' ? '07:00' : '',
+            inicioTurno4: '', finTurno4: '',
+            horarioPartido: turno === 'PARTIDO' ? '09:00-14:00/16:00-19:00' : '',
+            disponibilidad: 'NF',
+            estado:         estado,
+            finAusencia:    estado === 'IT' ? '2026-04-30' : (estado === 'MAT' ? '2026-09-01' : null),
+            inicioVac1: '2026-07-01', finVac1: '2026-07-15',
+            inicioVac2: null, finVac2: null,
+            inicioVac3: null, finVac3: null,
+            inicioVac4: null, finVac4: null,
+            dlf1: '2026-05-02', dlf2: null, dlf3: null,
+            dlf4: null, dlf5: null, dlf6: null,
+            fest1: '2026-04-17', fest2: null, fest3: null,
+            fest4: null, fest5: null, fest6: null
         };
     });
 
