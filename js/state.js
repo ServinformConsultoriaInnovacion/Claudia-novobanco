@@ -132,6 +132,7 @@ function guardarEstado() {
             config:           State.config,
             convenio:         State.convenio,
             perfiles:         State.perfiles,
+            staff:            { todos: State.staff.todos },
             dimensionamiento: { shrinkageMensual: State.dimensionamiento.shrinkageMensual },
             _version:         State._version
         };
@@ -193,6 +194,10 @@ function restaurarEstado() {
         }
         if (saved.convenio) Object.assign(State.convenio, saved.convenio);
         if (saved.perfiles) Object.assign(State.perfiles, saved.perfiles);
+        if (saved.staff && Array.isArray(saved.staff.todos)) {
+            State.staff.todos = saved.staff.todos;
+            // activos se recalcula cuando se carga el módulo staff
+        }
         if (saved.dimensionamiento && saved.dimensionamiento.shrinkageMensual) {
             State.dimensionamiento.shrinkageMensual = saved.dimensionamiento.shrinkageMensual;
         }

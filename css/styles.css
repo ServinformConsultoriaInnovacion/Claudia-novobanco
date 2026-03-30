@@ -640,6 +640,34 @@ tr.st-filter-row th {
 }
 .btn-icon:hover { background: var(--nb-grey-bg); color: var(--nb-red); }
 
+/* Custom dropdown para campos tlist */
+.st-dd-list {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  width: 100%;
+  min-width: 120px;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--nb-white);
+  border: 1px solid var(--nb-primary);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0,0,0,.15);
+  list-style: none;
+  margin: 0;
+  padding: 2px 0;
+  z-index: 9999;
+  display: none;
+}
+.st-dd-item {
+  padding: 5px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.st-dd-item:hover,
+.st-dd-item.selected { background: var(--nb-primary-light); color: var(--nb-primary-dark); }
+
 kbd {
   background: var(--nb-grey-bg);
   border: 1px solid var(--nb-border);

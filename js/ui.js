@@ -80,7 +80,7 @@ function initUI() {
     }
 
     _renderSidebar();
-    mostrarPanel('panelA');
+    mostrarPanel('panelStaff');
 }
 
 // ══════════════════════════════════════════════════════════════════════════

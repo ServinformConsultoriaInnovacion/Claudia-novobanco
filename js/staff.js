@@ -23,13 +23,16 @@ var STAFF_DISPONIBILIDADES  = ['NF', '7D'];
 var STAFF_ESTADOS           = ['ACTIVO', 'IT', 'MAT', 'PAT', 'LACT', 'P.DTO', 'PR', 'EXC'];
 var STAFF_SEDES             = ['TORREJON', 'VALLADOLID'];
 
-// Opciones para datalists de hora
-var STAFF_HORAS_DIA = [
-    '06:00','07:00','07:30','07:48','08:00','09:00','10:00','11:00',
-    '12:00','13:00','14:00','15:00','16:00','17:00','18:00',
-    '19:00','20:00','21:00','22:00','23:00'
-];
-var STAFF_HORAS_JORNADA = ['07:00','07:30','07:48','08:00','09:00'];
+// Opciones para datalists de hora — cada 30 min, 0:00 a 23:30
+var STAFF_HORAS_DIA = (function () {
+    var slots = [];
+    for (var h = 0; h < 24; h++) {
+        slots.push((h < 10 ? '0' : '') + h + ':00');
+        slots.push((h < 10 ? '0' : '') + h + ':30');
+    }
+    return slots;
+}());
+var STAFF_HORAS_JORNADA = ['06:00','06:30','07:00','07:30','07:48','08:00','08:30','09:00'];
 var STAFF_HORARIOS_PARTIDO = [
     '09:00-14:00/15:00-18:00',
     '09:00-14:00/16:00-18:00',
@@ -139,13 +142,21 @@ function renderModuloStaff(container) {
     }
     if (!_stKeyRegistrado) {
         document.addEventListener('keydown', function(e) {
-            if (e.ctrlKey && (e.key === 'z' || e.key === 'Z') && document.getElementById('stTabla')) {
+            var enTabla = !!document.getElementById('stTabla');
+            if (!enTabla) return;
+            if (e.ctrlKey && (e.key === 'c' || e.key === 'C') && _stSelRango) {
+                e.preventDefault();
+                _stCopiarRango();
+            }
+            if (e.ctrlKey && (e.key === 'z' || e.key === 'Z')) {
                 _stUndo();
                 e.preventDefault();
             }
         });
         _stKeyRegistrado = true;
     }
+    // Recalcular activos al abrir (los datos pueden venir de localStorage)
+    _stRecalcActivos();
 }
 
 // ── Panel de carga ────────────────────────────────────────────────────────
@@ -279,18 +290,57 @@ function _stPoblarOpcionesSvc(sel) {
 
 // ── Refresco global ───────────────────────────────────────────────────────
 
-function _stActualizar() {
+function _stActualizar(soloTbody) {
     // Stats
     var statsEl = document.getElementById('stStats');
     if (statsEl) _stRenderStats(statsEl);
 
     // Tabla
     var wrap = document.getElementById('stTablaWrap');
-    if (wrap) _stRenderTabla(wrap);
+    if (wrap) {
+        if (soloTbody) {
+            _stActualizarTbody();
+        } else {
+            _stRenderTabla(wrap);
+        }
+    }
 
     // Contador
     var filas = _stGetFiltradas();
     var cEl   = document.getElementById('stContador');
+    if (cEl) cEl.textContent = filas.length + ' agente' + (filas.length !== 1 ? 's' : '');
+}
+
+/** Actualiza solo el tbody sin destruir el thead (para filtros, no pierde foco) */
+function _stActualizarTbody() {
+    var tabla = document.getElementById('stTabla');
+    if (!tabla) return;
+    var filas    = _stGetFiltradas();
+    var newTbody = document.createElement('tbody');
+
+    if (!filas.length) {
+        var trV = document.createElement('tr');
+        var tdV = document.createElement('td');
+        tdV.colSpan = STAFF_COLS.length + 1;
+        tdV.style.cssText = 'text-align:center;padding:36px;color:var(--nb-text-light);font-size:13px;';
+        tdV.innerHTML = State.staff.todos.length
+            ? '🔍 No hay agentes con esos filtros.'
+            : '💭 Tabla vacía — sube un Excel o pulsa <strong>Datos demo</strong>.';
+        trV.appendChild(tdV);
+        newTbody.appendChild(trV);
+    } else {
+        filas.forEach(function(agente) {
+            var realIdx = State.staff.todos.indexOf(agente);
+            newTbody.appendChild(_stCrearFila(agente, realIdx));
+        });
+    }
+
+    var old = tabla.querySelector('tbody');
+    if (old) tabla.replaceChild(newTbody, old);
+    else tabla.appendChild(newTbody);
+
+    // Actualizar contador
+    var cEl = document.getElementById('stContador');
     if (cEl) cEl.textContent = filas.length + ' agente' + (filas.length !== 1 ? 's' : '');
 }
 
@@ -477,26 +527,65 @@ function _stEditarCelda(td, agente, col, realIdx) {
         });
 
     } else if (col.tipo === 'tlist') {
+        // Custom dropdown: siempre muestra todas las opciones, filtra mientras escribe
+        var wrapper = document.createElement('div');
+        wrapper.style.cssText = 'position:relative;display:block;width:100%;';
+
         input = document.createElement('input');
         input.type  = 'text';
-        var dlId = _stAsegurarDatalistCol(col);
-        input.setAttribute('list', dlId);
         input.value = valActual;
+        input.style.cssText = 'width:100%;min-width:' + (col.w - 12) + 'px;padding:3px 5px;' +
+            'border:1px solid var(--nb-primary);border-radius:3px;font-size:12px;font-family:inherit;' +
+            'background:var(--nb-white);box-sizing:border-box;';
+
+        var ul = document.createElement('ul');
+        ul.className = 'st-dd-list';
+
+        function _populateDropdown(txt) {
+            ul.innerHTML = '';
+            var opts = col.opts || [];
+            var lTxt = (txt || '').toLowerCase();
+            opts.forEach(function(opt) {
+                if (lTxt && opt.toLowerCase().indexOf(lTxt) === -1) return;
+                var li = document.createElement('li');
+                li.textContent = opt;
+                li.className = 'st-dd-item';
+                if (opt === input.value) li.classList.add('selected');
+                li.addEventListener('mousedown', function(e) {
+                    e.preventDefault(); // evitar blur del input
+                    input.value = opt;
+                    ul.innerHTML = '';
+                    ul.style.display = 'none';
+                    confirmar();
+                });
+                ul.appendChild(li);
+            });
+            ul.style.display = ul.children.length ? 'block' : 'none';
+        }
+
+        input.addEventListener('focus', function() { _populateDropdown(''); });
+        input.addEventListener('input', function() { _populateDropdown(input.value); });
+
+        wrapper.appendChild(input);
+        wrapper.appendChild(ul);
+        td.innerHTML = '';
+        td.appendChild(wrapper);
+        input.focus();
+        input.select();
+        _populateDropdown('');
 
     } else {
         input = document.createElement('input');
         input.type  = col.tipo === 'date' ? 'date' : 'text';
         input.value = valActual;
+        input.style.cssText = 'width:100%;min-width:' + (col.w - 12) + 'px;padding:3px 5px;' +
+            'border:1px solid var(--nb-primary);border-radius:3px;font-size:12px;font-family:inherit;' +
+            'background:var(--nb-white);box-shadow:0 0 0 2px rgba(59,179,154,.2);box-sizing:border-box;';
+        td.innerHTML = '';
+        td.appendChild(input);
+        input.focus();
+        if (input.select && col.tipo !== 'date') input.select();
     }
-
-    input.style.cssText = 'width:100%;min-width:' + (col.w - 12) + 'px;padding:3px 5px;' +
-        'border:1px solid var(--nb-primary);border-radius:3px;font-size:12px;font-family:inherit;' +
-        'background:var(--nb-white);box-shadow:0 0 0 2px rgba(59,179,154,.2);';
-
-    td.innerHTML = '';
-    td.appendChild(input);
-    input.focus();
-    if (input.select && col.tipo !== 'date') input.select();
 
     function confirmar() {
         _stSetVal(agente, col.key, input.value);
@@ -630,14 +719,15 @@ function _stEstadoChip(estado) {
 function _stGetFiltradas() {
     return State.staff.todos.filter(function(a) {
         if (_stFiltroSvc && a.servicioId !== _stFiltroSvc) return false;
+
         if (_stFiltroEstado === 'activo') {
             var inactivo = ['IT', 'MAT', 'PAT', 'LACT', 'EXC', 'PR', 'P.DTO'];
-            return !inactivo.includes((a.estado || '').toUpperCase());
+            if (inactivo.includes((a.estado || '').toUpperCase())) return false;
+        } else if (_stFiltroEstado) {
+            if ((a.estado || '').toUpperCase() !== _stFiltroEstado.toUpperCase()) return false;
         }
-        if (_stFiltroEstado) {
-            return (a.estado || '').toUpperCase() === _stFiltroEstado.toUpperCase();
-        }
-        // Filtros por columna
+
+        // Filtros por columna (siempre se aplican)
         for (var key in _stFiltrosCol) {
             var fval = (_stFiltrosCol[key] || '').toLowerCase().trim();
             if (!fval) continue;
@@ -1086,10 +1176,47 @@ function _stHighlightRango() {
 
 function _stLimpiarFiltrosCol() {
     _stFiltrosCol = {};
-    // Limpiar controles visuales de filtro
-    document.querySelectorAll('#stTabla .st-col-filter').forEach(function(el) {
+    document.querySelectorAll('.st-col-filter').forEach(function(el) {
         if (el.tagName === 'SELECT') el.selectedIndex = 0;
         else el.value = '';
     });
-    _stActualizar();
+    _stActualizar(true);
+}
+
+// ── Copiar rango al portapapeles ─────────────────────────────────────────
+
+function _stCopiarRango() {
+    if (!_stSelRango) return;
+    var r = _stSelRango;
+    var lines = [];
+    for (var row = r.r1; row <= r.r2; row++) {
+        var agente = State.staff.todos[row];
+        if (!agente) continue;
+        var celdas = [];
+        for (var col = r.c1; col <= r.c2; col++) {
+            celdas.push(String(_stGetVal(agente, STAFF_COLS[col].key) || ''));
+        }
+        lines.push(celdas.join('\t'));
+    }
+    var text = lines.join('\n');
+    var n = (r.r2 - r.r1 + 1) + '×' + (r.c2 - r.c1 + 1);
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function() {
+            toast('Copiadas ' + n + ' celdas — pega con Ctrl+V', 'success');
+        }).catch(function() { _stCopiarFallback(text, n); });
+    } else {
+        _stCopiarFallback(text, n);
+    }
+}
+
+function _stCopiarFallback(text, label) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); toast('Copiadas ' + label + ' celdas', 'success'); }
+    catch (e) { toast('No se pudo copiar al portapapeles', 'error'); }
+    document.body.removeChild(ta);
 }
