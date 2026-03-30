@@ -1,14 +1,20 @@
 /**
- * forecast.js — Editor de previsión de llamadas + resumen de staff
+ * forecast.js — Utilidades compartidas de previsión
  * PAX Servinform · 2026
+ *
+ * Contiene: estado compartido, utilidades de fecha, generación de demo,
+ * helpers de lectura/escritura de datos, paste Ctrl+V y resumen de staff.
+ * El módulo de UI vive en prevision.js (renderModuloPrevision).
  */
 
 'use strict';
 
+// ── Estado compartido (leído/escrito por prevision.js) ────────────────────
+
 var _fSemanaOffset    = 0;
 var _fServicioActivo  = null;
-var _fContainer       = null;   // referencia al contenedor del editor
-var _fSelCelda        = null;   // { fecha, franja } — celda inicio para Ctrl+V
+var _fContainer       = null;
+var _fSelCelda        = null;
 var _fPasteRegistrado = false;
 
 var _DIAS_SHORT = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
@@ -101,238 +107,7 @@ function _patronHorario(franjas) {
     return p;
 }
 
-// ── Editor principal ──────────────────────────────────────────────────────
-
-function renderEditorPrevision(container) {
-    _fContainer = container;
-    container.innerHTML = '';
-    var servicios = State.config.servicios;
-
-    if (!servicios.length) {
-        container.innerHTML = '<div style="padding:24px;text-align:center;color:var(--nb-text-light);">' +
-            'Configura al menos un servicio antes de editar la previsión.</div>';
-        return;
-    }
-
-    // Inicializar servicio activo
-    if (!_fServicioActivo || !servicios.find(function(s) { return s.id === _fServicioActivo; })) {
-        _fServicioActivo = servicios[0].id;
-    }
-
-    // Tabs de servicio (si hay más de uno)
-    if (servicios.length > 1) {
-        var tabs = document.createElement('div');
-        tabs.style.cssText = 'display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap;';
-        servicios.forEach(function(svc) {
-            var activo = svc.id === _fServicioActivo;
-            var btn = document.createElement('button');
-            btn.className = 'btn btn-' + (activo ? 'primary' : 'secondary') + ' btn-sm';
-            btn.innerHTML = '<span class="svc-dot" style="background:' + svc.color + ';margin-right:4px;"></span>' + _escF(svc.nombre);
-            btn.addEventListener('click', function() { _fServicioActivo = svc.id; renderEditorPrevision(container); });
-            tabs.appendChild(btn);
-        });
-        container.appendChild(tabs);
-    }
-
-    // Navegación de semana
-    var lunes = _getLunes(_fSemanaOffset);
-    var nav = document.createElement('div');
-    nav.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;';
-    nav.innerHTML =
-        '<button class="btn btn-secondary btn-sm" id="btnSemAnt">◀</button>' +
-        '<span style="font-weight:700;font-size:13px;flex:1;text-align:center;">' + _fmtRangoSemana(lunes) + '</span>' +
-        '<button class="btn btn-secondary btn-sm" id="btnSemHoy">Hoy</button>' +
-        '<button class="btn btn-secondary btn-sm" id="btnSemSig">▶</button>';
-    container.appendChild(nav);
-    nav.querySelector('#btnSemAnt').onclick = function() { _fSemanaOffset--; renderEditorPrevision(container); };
-    nav.querySelector('#btnSemSig').onclick = function() { _fSemanaOffset++; renderEditorPrevision(container); };
-    nav.querySelector('#btnSemHoy').onclick = function() { _fSemanaOffset = 0; renderEditorPrevision(container); };
-
-    // ¿Hay datos para esta semana?
-    if (!_hayDatosSemana(lunes)) {
-        var aviso = document.createElement('div');
-        aviso.style.cssText = 'text-align:center;padding:32px;color:var(--nb-text-light);font-size:13px;' +
-            'border:2px dashed var(--nb-border);border-radius:8px;';
-        aviso.innerHTML = 'No hay datos de previsión para esta semana.<br>' +
-            '<span style="font-size:11px;">Sube un Excel en el bloque de carga o genera datos demo.</span>';
-        container.appendChild(aviso);
-        return;
-    }
-
-    // Tabla — arquitectura doble scroll (igual que Staff: topBar espejo + tableScroll)
-    var fWrap = document.createElement('div');
-
-    var fTopBar = document.createElement('div');
-    fTopBar.id        = 'fTopBar';
-    fTopBar.className = 'f-top-scroll';
-    var fTopInner = document.createElement('div');
-    fTopInner.className = 'f-top-inner';
-    fTopBar.appendChild(fTopInner);
-
-    var fTableScroll = document.createElement('div');
-    fTableScroll.id        = 'fTableScroll';
-    fTableScroll.className = 'f-table-scroll';
-    var fTable = _crearTablaForecast(lunes);
-    fTableScroll.appendChild(fTable);
-
-    fWrap.appendChild(fTopBar);
-    fWrap.appendChild(fTableScroll);
-    container.appendChild(fWrap);
-
-    // Sincronizar scrollbars top ↔ tableScroll (sin bucle)
-    var fSyncing = false;
-    fTopBar.addEventListener('scroll', function() {
-        if (fSyncing) return; fSyncing = true;
-        fTableScroll.scrollLeft = fTopBar.scrollLeft;
-        fSyncing = false;
-    });
-    fTableScroll.addEventListener('scroll', function() {
-        if (fSyncing) return; fSyncing = true;
-        fTopBar.scrollLeft = fTableScroll.scrollLeft;
-        fSyncing = false;
-    });
-    requestAnimationFrame(function() {
-        fTopInner.style.width  = fTable.scrollWidth + 'px';
-        fTopInner.style.height = '1px';
-    });
-
-    // Registrar handler de paste exactamente una vez por sesión
-    if (!_fPasteRegistrado) {
-        document.addEventListener('paste', _fOnPaste);
-        _fPasteRegistrado = true;
-    }
-
-    // Totales
-    var tot = _calcularTotalesSemana(lunes);
-    if (tot) {
-        var resRow = document.createElement('div');
-        resRow.style.cssText = 'display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;';
-        resRow.innerHTML =
-            _chip('Total llamadas', fmtNum(tot.totalLlam)) +
-            _chip('Media / día', fmtNum(tot.mediaDiaria, 0)) +
-            _chip('AHT medio', fmtNum(tot.ahtMedio, 0) + ' s') +
-            _chip('Pico', fmtNum(tot.pico) + ' @ ' + tot.picoPeriodo);
-        container.appendChild(resRow);
-    }
-
-    // Aviso de ediciones manuales
-    if (State.forecast.editado) {
-        var nota = document.createElement('div');
-        nota.style.cssText = 'font-size:11px;color:var(--nb-orange);margin-top:8px;display:flex;align-items:center;gap:8px;';
-        nota.innerHTML = '⚠️ Hay ediciones manuales.';
-        var btnReset = document.createElement('button');
-        btnReset.className = 'btn btn-secondary btn-sm';
-        btnReset.textContent = 'Resetear a datos del Excel';
-        btnReset.onclick = function() {
-            if (!confirm('¿Resetear todas las ediciones manuales?')) return;
-            recuperarUltimoArchivo().then(function(file) {
-                if (!file) { toast('No hay Excel guardado para recargar.', 'warning'); return; }
-                parsearExcel(file).then(function() {
-                    State.forecast.editado = false;
-                    renderEditorPrevision(container);
-                    toast('Previsión recargada desde el Excel.', 'success');
-                }).catch(function(e) { toast('Error: ' + e.message, 'error'); });
-            });
-        };
-        nota.appendChild(btnReset);
-        container.appendChild(nota);
-    }
-}
-
-function _hayDatosSemana(lunes) {
-    for (var d = 0; d < 7; d++) {
-        if (State.forecast.llamadas[_fecStr(_addDays(lunes, d))]) return true;
-    }
-    return false;
-}
-
-// ── Tabla ─────────────────────────────────────────────────────────────────
-
-function _crearTablaForecast(lunes) {
-    var franjas = State.config.franjas;
-    var svcId   = _fServicioActivo;
-    var fechas  = [];
-    for (var d = 0; d < 7; d++) fechas.push(_fecStr(_addDays(lunes, d)));
-
-    var table = document.createElement('table');
-    table.id        = 'fTabla';
-    table.className = 'nb-table f-table';
-    table.style.minWidth = '580px';
-
-    // Cabecera con sticky top (funciona porque .f-table-scroll tiene overflow:auto + max-height)
-    var thead = document.createElement('thead');
-    var trH   = document.createElement('tr');
-    // Esquina: sticky top + left (z-index mayor para que no quede tapada)
-    trH.innerHTML = '<th class="f-th-corner">Franja</th>';
-    fechas.forEach(function(f, i) {
-        var esFDS = (i === 5 || i === 6);
-        var dDate = _addDays(lunes, i);
-        trH.innerHTML += '<th class="f-th-day' + (esFDS ? ' f-th-fds' : '') + '" data-fecha="' + f + '">' +
-            _DIAS_SHORT[i] + '<br>' +
-            '<span style="font-weight:400;font-size:10px;">' + dDate.getDate() + '/' + (dDate.getMonth() + 1) + '</span></th>';
-    });
-    trH.innerHTML += '<th class="f-th-day">Total</th>';
-    thead.appendChild(trH);
-    table.appendChild(thead);
-
-    // Cuerpo
-    var tbody = document.createElement('tbody');
-    var colTotals = new Array(7).fill(0);
-    var grandTotal = 0;
-
-    franjas.forEach(function(franja) {
-        var tr = document.createElement('tr');
-        var tdF = document.createElement('td');
-        tdF.style.cssText = 'font-size:11px;font-weight:700;color:var(--nb-text-light);white-space:nowrap;' +
-            'position:sticky;left:0;background:var(--nb-white);z-index:1;';
-        tdF.textContent = franja;
-        tr.appendChild(tdF);
-
-        var rowTotal = 0;
-        fechas.forEach(function(fecha, di) {
-            var llam = _getLlam(fecha, franja, svcId);
-            var aht  = _getAHT(fecha, franja, svcId);
-            colTotals[di] += llam;
-            rowTotal       += llam;
-            grandTotal     += llam;
-
-            var td = document.createElement('td');
-            td.style.cssText = 'cursor:pointer;font-size:12px;padding:5px 8px;vertical-align:top;min-width:62px;';
-            td.dataset.fecha  = fecha;
-            td.dataset.franja = franja;
-            td.dataset.svcid  = svcId;
-            _renderCelda(td, llam, aht);
-            td.title = 'Clic para seleccionar · doble clic para editar';
-            // Clic simple: marcar como origen para Ctrl+V
-            td.addEventListener('click', function() {
-                var prev = document.querySelector('#fTabla td.f-sel');
-                if (prev) prev.classList.remove('f-sel');
-                td.classList.add('f-sel');
-                _fSelCelda = { fecha: td.dataset.fecha, franja: td.dataset.franja };
-            });
-            td.addEventListener('dblclick', function() { _editarCelda(td); });
-            tr.appendChild(td);
-        });
-
-        var tdTot = document.createElement('td');
-        tdTot.style.cssText = 'font-size:12px;font-weight:700;background:var(--nb-grey-bg);';
-        tdTot.textContent = rowTotal || '—';
-        tr.appendChild(tdTot);
-        tbody.appendChild(tr);
-    });
-
-    // Fila totales
-    var trTot = document.createElement('tr');
-    trTot.style.cssText = 'background:var(--nb-grey-bg);font-weight:700;';
-    trTot.innerHTML = '<td style="font-size:11px;position:sticky;left:0;background:var(--nb-grey-bg);">TOTAL</td>';
-    colTotals.forEach(function(t) {
-        trTot.innerHTML += '<td style="font-size:12px;">' + (t || '—') + '</td>';
-    });
-    trTot.innerHTML += '<td style="font-size:12px;">' + (grandTotal || '—') + '</td>';
-    tbody.appendChild(trTot);
-    table.appendChild(tbody);
-    return table;
-}
+// ── Acceso a datos (usados por prevision.js) ──────────────────────────────
 
 function _getLlam(fecha, franja, svcId) {
     var f = State.forecast.llamadas;
@@ -344,74 +119,6 @@ function _getAHT(fecha, franja, svcId) {
     return (f[fecha] && f[fecha][franja] && f[fecha][franja][svcId] !== undefined)
         ? f[fecha][franja][svcId] : 0;
 }
-
-function _renderCelda(td, llam, aht) {
-    if (llam > 0) {
-        td.innerHTML =
-            '<span style="display:block;font-weight:700;">' + llam + '</span>' +
-            '<span style="font-size:10px;color:var(--nb-text-light);">' + aht + ' s</span>';
-    } else {
-        td.innerHTML = '<span style="color:#ddd;">—</span>';
-    }
-}
-
-// ── Edición inline ────────────────────────────────────────────────────────
-
-function _editarCelda(td) {
-    var fecha  = td.dataset.fecha;
-    var franja = td.dataset.franja;
-    var svcId  = td.dataset.svcid;
-    var llam0  = _getLlam(fecha, franja, svcId);
-    var aht0   = _getAHT(fecha, franja, svcId);
-
-    td.innerHTML =
-        '<input id="iLlam" type="number" min="0" value="' + llam0 + '"' +
-        ' style="width:50px;padding:2px 4px;font-size:11px;font-family:inherit;' +
-        'border:1px solid var(--nb-primary);border-radius:2px;">' +
-        '<br>' +
-        '<input id="iAHT" type="number" min="0" value="' + aht0 + '"' +
-        ' style="width:50px;padding:2px 4px;font-size:11px;font-family:inherit;' +
-        'border:1px solid var(--nb-border);border-radius:2px;margin-top:2px;">';
-
-    var inpLlam = td.querySelector('#iLlam');
-    var inpAHT  = td.querySelector('#iAHT');
-
-    function confirmar() {
-        var llam = parseInt(inpLlam.value)  || 0;
-        var aht  = parseInt(inpAHT.value)   || 0;
-        if (!State.forecast.llamadas[fecha])         State.forecast.llamadas[fecha] = {};
-        if (!State.forecast.llamadas[fecha][franja]) State.forecast.llamadas[fecha][franja] = {};
-        if (!State.forecast.aht[fecha])              State.forecast.aht[fecha] = {};
-        if (!State.forecast.aht[fecha][franja])      State.forecast.aht[fecha][franja] = {};
-        State.forecast.llamadas[fecha][franja][svcId] = llam;
-        State.forecast.aht[fecha][franja][svcId]      = aht;
-        State.forecast.editado = true;
-        programarGuardado();
-        _renderCelda(td, llam, aht);
-    }
-
-    function cancelar() { _renderCelda(td, llam0, aht0); }
-
-    // Confirmar cuando el foco sale completamente de la celda
-    td.addEventListener('focusout', function handler(e) {
-        if (td.contains(e.relatedTarget)) return;
-        td.removeEventListener('focusout', handler);
-        confirmar();
-    });
-
-    inpLlam.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') { inpAHT.focus(); inpAHT.select(); }
-        if (e.key === 'Escape') { cancelar(); }
-    });
-    inpAHT.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') confirmar();
-        if (e.key === 'Escape') cancelar();
-    });
-
-    inpLlam.focus();
-    inpLlam.select();
-}
-
 // ── Cálculo de totales ────────────────────────────────────────────────────
 
 function _calcularTotalesSemana(lunes) {
@@ -563,7 +270,7 @@ function _fOnPaste(e) {
     State.forecast.editado = true;
     programarGuardado();
     _fSelCelda = null;
-    if (_fContainer) renderEditorPrevision(_fContainer);
+    if (typeof _pvRefrescar === 'function') _pvRefrescar();
     toast(pegados + ' celda' + (pegados !== 1 ? 's' : '') + ' pegada' + (pegados !== 1 ? 's' : ''), 'success');
 }
 

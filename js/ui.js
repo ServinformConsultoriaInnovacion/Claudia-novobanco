@@ -20,18 +20,18 @@ const NAV_ITEMS = [
         fase:  null
     },
     {
+        id:    'panelPrevision',
+        icon:  '📞',
+        label: 'Previsión',
+        sub:   'Llamadas · AHT · Editor',
+        fase:  null
+    },
+    {
         id:    'panelA',
         icon:  '⚙️',
         label: 'Configuración',
         sub:   'Servicio · Convenio · Perfiles',
         fase:  null
-    },
-    {
-        id:    'panelB',
-        icon:  '📂',
-        label: 'Carga de Datos',
-        sub:   'Excel · Previsión · Staff',
-        fase:  'Fase 2'
     },
     {
         id:    'panelC',
@@ -174,9 +174,9 @@ function mostrarPanel(panelId) {
     main.scrollTop = 0;
 
     switch (panelId) {
-        case 'panelStaff': _renderPanelStaff(main); break;
-        case 'panelA': _renderPanelA(main); break;
-        case 'panelB': _renderPanelB(main); break;
+        case 'panelStaff':    _renderPanelStaff(main); break;
+        case 'panelPrevision': renderModuloPrevision(main); break;
+        case 'panelA':        _renderPanelA(main); break;
         default:
             const item = NAV_ITEMS.find(function(i) { return i.id === panelId; });
             if (item) _renderStub(main, item);
@@ -712,18 +712,11 @@ function UI_importarPerfiles(event) {
         .catch(function(e) { toast('Error al importar: ' + e.message, 'error'); });
 }
 
-// ══════════════════════════════════════════════════════════════════════════//  PANEL B — CARGA DE DATOS
-// ══════════════════════════════════════════════════════════════════════════════
+// (Panel B eliminado — sustituido por panelStaff y panelPrevision como módulos independientes)
 
-function _renderPanelB(container) {
-    container.appendChild(_renderSubPanelB1());
-    container.appendChild(_renderSubPanelB2());
-    container.appendChild(_renderSubPanelB3());
-}
+// ── (B1/B2/B3 eliminados — su funcionalidad está en panelStaff y panelPrevision) ──
 
-// ── B1: Subida de Excel ───────────────────────────────────────────────────────
-
-function _renderSubPanelB1() {
+function _renderSubPanelB1_OBSOLETO() {
     const panel = document.createElement('div');
     panel.className = 'panel';
     panel.id = 'panelB1';
@@ -797,98 +790,7 @@ function _renderSubPanelB1() {
     return panel;
 }
 
-function _cargarExcel(file) {
-    mostrarProgreso('Cargando Excel...', 10, file.name);
-    parsearExcel(file)
-        .then(function(res) {
-            mostrarProgreso('Procesando...', 80, 'Finalizando...');
-            setTimeout(function() {
-                ocultarProgreso();
-                _mostrarResultadoCarga(res);
-                _mostrarBannerUltimoArchivo(file.name, function() { _cargarExcel(file); });
-                // Refrescar editores si están visibles
-                const b2body = document.getElementById('editorPrevisionBody');
-                if (b2body) renderEditorPrevision(b2body);
-                const b3body = document.getElementById('resumenStaffBody');
-                if (b3body) renderResumenStaff(b3body);
-                toast('Éxito: ' + res.hojas.join(' · '), 'success');
-            }, 200);
-        })
-        .catch(function(e) {
-            ocultarProgreso();
-            toast('Error al parsear: ' + e.message, 'error');
-        });
-}
-
-function _mostrarResultadoCarga(res) {
-    const div = document.getElementById('resultadoCarga');
-    if (!div) return;
-    div.style.display = 'block';
-    div.innerHTML =
-        '<div style="background:var(--nb-primary-light);border:1px solid var(--nb-primary-mid);' +
-        'border-radius:4px;padding:10px 14px;font-size:12px;margin-bottom:10px;">' +
-        '✅ Carga completada: ' + res.hojas.join(' &nbsp;·&nbsp; ') +
-        '</div>';
-}
-
-function _mostrarBannerUltimoArchivo(nombre, onRecargar) {
-    const div = document.getElementById('ultimoBanner');
-    if (!div) return;
-    div.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 12px;margin-bottom:10px;' +
-        'background:var(--nb-primary-light);border:1px solid var(--nb-primary-mid);border-radius:4px;font-size:12px;';
-    div.innerHTML =
-        '📄 Último archivo: <strong>' + _esc(nombre) + '</strong>' +
-        '<button class="btn btn-secondary btn-sm" id="btnRecargarUltimo" style="margin-left:auto;">&#8635; Recargar</button>';
-    div.querySelector('#btnRecargarUltimo').onclick = onRecargar;
-}
-
-// ── B2: Editor de Previsión ─────────────────────────────────────────────────
-
-function _renderSubPanelB2() {
-    const panel = document.createElement('div');
-    panel.className = 'panel';
-    panel.id = 'panelB2';
-
-    panel.innerHTML =
-        '<div class="panel-header" onclick="togglePanel(this)">' +
-            '<span class="panel-icon">📅</span>' +
-            '<h2>B2 · Previsión de Llamadas + AHT</h2>' +
-            '<span class="panel-desc">Editor interactivo · doble clic en celda para editar</span>' +
-            '<span class="panel-toggle">▼</span>' +
-        '</div>' +
-        '<div class="panel-body" id="editorPrevisionBody"></div>';
-
-    setTimeout(function() {
-        const body = panel.querySelector('#editorPrevisionBody');
-        if (body) renderEditorPrevision(body);
-    }, 0);
-
-    return panel;
-}
-
-// ── B3: Análisis de Plantilla ──────────────────────────────────────────────
-
-function _renderSubPanelB3() {
-    const panel = document.createElement('div');
-    panel.className = 'panel';
-    panel.id = 'panelB3';
-
-    panel.innerHTML =
-        '<div class="panel-header" onclick="togglePanel(this)">' +
-            '<span class="panel-icon">👥</span>' +
-            '<h2>B3 · Análisis de Plantilla</h2>' +
-            '<span class="panel-desc">Resumen de agentes por servicio</span>' +
-            '<span class="panel-toggle">▼</span>' +
-        '</div>' +
-        '<div class="panel-body" id="resumenStaffBody"></div>';
-
-    setTimeout(function() {
-        const body = panel.querySelector('#resumenStaffBody');
-        if (body) renderResumenStaff(body);
-    }, 0);
-
-    return panel;
-}
+// (B1, B2, B3 y helpers de carga eliminados — ver panelStaff y panelPrevision)
 
 // ══════════════════════════════════════════════════════════════════════════════//  HELPERS DE ACORDEÓN (llamados desde onclick en el HTML dinámico)
 // ══════════════════════════════════════════════════════════════════════════
