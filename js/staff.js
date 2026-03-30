@@ -999,7 +999,7 @@ function _stOnPaste(e) {
     });
 
     _stRecalcActivos();
-    _stActualizar();
+    _stActualizar(true);   // soloTbody=true → no reconstruye el scroll, mantiene posición X
     programarGuardado();
     toast(pegados + ' celda' + (pegados !== 1 ? 's' : '') + ' pegada' + (pegados !== 1 ? 's' : ''), 'success');
     _stSelOrigen = null;
