@@ -424,8 +424,8 @@ function _stRenderTabla(wrap) {
         var thF = document.createElement('th');
         var filter;
 
-        // Con opciones cortas → <select>; resto → <input text>
-        if (col.tipo === 'select' || (col.opts && col.opts.length <= 20)) {
+        // Columnas con lista de opciones (cualquier tamaño) → <select>
+        if (col.tipo === 'select' || col.opts) {
             filter = document.createElement('select');
             filter.className = 'st-col-filter';
             var oAll = document.createElement('option');
@@ -437,6 +437,13 @@ function _stRenderTabla(wrap) {
                 if (String(_stFiltrosCol[col.key] || '') === String(o)) opt.selected = true;
                 filter.appendChild(opt);
             });
+        // Columnas de fecha → <input type="date"> (almacenadas en YYYY-MM-DD)
+        } else if (col.tipo === 'date') {
+            filter = document.createElement('input');
+            filter.type      = 'date';
+            filter.className = 'st-col-filter';
+            filter.value     = _stFiltrosCol[col.key] || '';
+        // Texto libre
         } else {
             filter = document.createElement('input');
             filter.type        = 'text';

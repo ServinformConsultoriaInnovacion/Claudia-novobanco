@@ -646,6 +646,12 @@ table.staff-table td:has(div) {
   box-sizing: border-box;
   min-width: 40px;
 }
+/* input[type=date] necesita algo más de espacio para el icono del calendario */
+input[type="date"].st-col-filter {
+  min-width: 115px;
+  padding: 1px 2px;
+  font-size: 10px;
+}
 .st-col-filter:focus {
   outline: none;
   border-color: var(--nb-primary);
