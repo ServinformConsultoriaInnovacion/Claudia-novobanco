@@ -611,7 +611,7 @@ function UI_resetConvenio() { UI_presetConvenioES(); }
 
 // ── A2: Reglas de excepción ───────────────────────────────────────────────
 
-/** Metadatos de los parámetros del grupo «Cálculo base» */
+/** Metadatos param base (Fase 2) */
 var _REG_PARAM_BASE_META = [
     { key: 'shrinkage',        label: 'Shrinkage adicional',  unidad: '%',    min: 0, max: 100,  step: 0.1 },
     { key: 'reduccionJornada', label: 'Reducción de jornada', unidad: '%',    min: 0, max: 50,   step: 0.1 },
@@ -620,6 +620,131 @@ var _REG_PARAM_BASE_META = [
     { key: 'jornadaSemanal',   label: 'Jornada semanal',      unidad: 'h',    min: 1, max: 60,   step: 0.5 },
     { key: 'vacaciones',       label: 'Vacaciones',           unidad: 'días', min: 0, max: 60,   step: 1   }
 ];
+
+/** Metadatos Rotación y turnos (Fase 4) */
+var _REG_ROTACION_META = [
+    { key: 'frecuencia',          label: 'Frecuencia rotación',    tipo: 'select',
+      opciones: ['semanal','quincenal','mensual','trimestral','no_rota'],
+      labels:   ['Semanal','Quincenal','Mensual','Trimestral','No rota'] },
+    { key: 'patronFds',           label: 'Patrón FDS',             tipo: 'select',
+      opciones: ['1_cada_2','1_cada_3','1_cada_4','libre','nunca'],
+      labels:   ['1 de cada 2','1 de cada 3','1 de cada 4','Libre','Nunca'] },
+    { key: 'fdsAlMes',            label: 'FDS trabajados / mes',   unidad: 'FDS',  min: 0, max: 10,  step: 1 },
+    { key: 'cambiosTurnoMes',     label: 'Cambios de turno / mes', unidad: '/mes', min: 0, max: 50,  step: 1 },
+    { key: 'cambiosTurnoAnio',    label: 'Cambios de turno / año', unidad: '/año', min: 0, max: 200, step: 1 },
+    { key: 'descansoCambioTurno', label: 'Descanso entre turnos',  unidad: 'h',    min: 0, max: 72,  step: 1 },
+    { key: 'maxNochesConsec',     label: 'Máx. noches consecutivas',unidad: 'n.',   min: 1, max: 20,  step: 1 },
+    { key: 'nochesAlMes',         label: 'Noches al mes',          unidad: 'n.',   min: 0, max: 31,  step: 1 }
+];
+
+/** Metadatos Carga especial (Fase 4) */
+var _REG_CARGA_META = [
+    { key: 'festivosObligAnio',  label: 'Festivos oblig. / año',  unidad: 'días', min: 0,    max: 30,   step: 1 },
+    { key: 'guardiasAlMes',      label: 'Guardias / mes',          unidad: '/mes', min: 0,    max: 20,   step: 1 },
+    { key: 'jornadaPartidaMes',  label: 'Jornada partida / mes',   unidad: '/mes', min: 0,    max: 31,   step: 1 },
+    { key: 'horasExtraMes',      label: 'Horas extra / mes',       unidad: 'h',    min: 0,    max: 200,  step: 1 },
+    { key: 'horasExtraAnio',     label: 'Horas extra / año',       unidad: 'h',    min: 0,    max: 1000, step: 1 },
+    { key: 'bolsaHoras',         label: 'Bolsa de horas',          unidad: 'h',    min: -500, max: 500,  step: 1 }
+];
+
+/** Metadatos Teletrabajo (Fase 4) */
+var _REG_TELETRABAJO_META = [
+    { key: 'diasSemana', label: 'Días teletrabajo / semana', unidad: 'días', min: 0, max: 7,  step: 1 },
+    { key: 'diasMes',    label: 'Días teletrabajo / mes',    unidad: 'días', min: 0, max: 31, step: 1 }
+];
+
+/**
+ * Renderiza un grupo de parámetros de un sub-objeto (rotacion, carga, teletrabajo).
+ * Soporta tipo 'select' (valor string) y tipo numérico (por defecto).
+ */
+function _rRegla_grupoSubParams(titulo, subObj, metas) {
+    var wrap = document.createElement('div');
+    wrap.style.marginTop = '10px';
+
+    var tit = document.createElement('div');
+    tit.textContent = 'Excepciones · ' + titulo;
+    tit.style.cssText = 'font-size:10px;font-weight:700;color:var(--nb-text-light);' +
+        'text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;';
+    wrap.appendChild(tit);
+
+    metas.forEach(function(meta) {
+        var param = subObj[meta.key];
+        if (!param) return;
+
+        var fila = document.createElement('div');
+        fila.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:7px;';
+
+        var chk = document.createElement('input');
+        chk.type    = 'checkbox';
+        chk.checked = !!param.activa;
+        chk.style.cssText = 'width:14px;height:14px;cursor:pointer;accent-color:var(--nb-primary);flex-shrink:0;';
+
+        var lbl = document.createElement('span');
+        lbl.textContent = meta.label;
+        lbl.style.cssText = 'flex:1;font-size:12px;color:' +
+            (param.activa ? 'var(--nb-text)' : 'var(--nb-text-light)') + ';';
+
+        var ctrl;
+        if (meta.tipo === 'select') {
+            ctrl = document.createElement('select');
+            ctrl.disabled = !param.activa;
+            ctrl.style.cssText = 'width:130px;padding:4px 6px;border:1px solid var(--nb-border);' +
+                'border-radius:4px;font-size:12px;font-family:inherit;transition:opacity 0.15s;' +
+                (param.activa ? '' : 'opacity:0.3;');
+            // Op placeholder vacía
+            var dflt = document.createElement('option');
+            dflt.value = ''; dflt.textContent = '– Elige –';
+            ctrl.appendChild(dflt);
+            meta.opciones.forEach(function(val, i) {
+                var opt = document.createElement('option');
+                opt.value = val;
+                opt.textContent = meta.labels[i];
+                if (val === param.valor) opt.selected = true;
+                ctrl.appendChild(opt);
+            });
+            ctrl.addEventListener('change', function() {
+                param.valor = ctrl.value || null;
+                programarGuardado();
+            });
+        } else {
+            ctrl = document.createElement('input');
+            ctrl.type        = 'number';
+            ctrl.value       = param.valor !== null ? param.valor : '';
+            ctrl.placeholder = '–';
+            ctrl.min         = meta.min;
+            ctrl.max         = meta.max;
+            ctrl.step        = meta.step;
+            ctrl.disabled    = !param.activa;
+            ctrl.style.cssText = 'width:76px;padding:4px 6px;border:1px solid var(--nb-border);' +
+                'border-radius:4px;font-size:12px;font-family:inherit;text-align:right;' +
+                'transition:opacity 0.15s;' + (param.activa ? '' : 'opacity:0.3;');
+            ctrl.addEventListener('change', function() {
+                param.valor = ctrl.value !== '' ? parseFloat(ctrl.value) : null;
+                programarGuardado();
+            });
+        }
+
+        var uni = document.createElement('span');
+        uni.textContent = meta.tipo === 'select' ? '' : (meta.unidad || '');
+        uni.style.cssText = 'font-size:11px;color:var(--nb-text-light);width:28px;flex-shrink:0;';
+
+        chk.addEventListener('change', function() {
+            param.activa       = chk.checked;
+            lbl.style.color    = param.activa ? 'var(--nb-text)' : 'var(--nb-text-light)';
+            ctrl.disabled      = !param.activa;
+            ctrl.style.opacity = param.activa ? '' : '0.3';
+            programarGuardado();
+        });
+
+        fila.appendChild(chk);
+        fila.appendChild(lbl);
+        fila.appendChild(ctrl);
+        fila.appendChild(uni);
+        wrap.appendChild(fila);
+    });
+
+    return wrap;
+}
 
 function UI_renderReglasExcepcion() {
     var lista = document.getElementById('listaReglasExcepcion');
@@ -732,6 +857,17 @@ function _rRegla_crearTarjeta(regla) {
     _REG_PARAM_BASE_META.forEach(function(meta) {
         body.appendChild(_rRegla_filaParam(regla, meta));
     });
+
+    // Grupos Fase 4
+    body.appendChild(_rRegla_grupoSubParams(
+        'Rotación y turnos', regla.parametros.rotacion, _REG_ROTACION_META
+    ));
+    body.appendChild(_rRegla_grupoSubParams(
+        'Carga especial', regla.parametros.carga, _REG_CARGA_META
+    ));
+    body.appendChild(_rRegla_grupoSubParams(
+        'Teletrabajo', regla.parametros.teletrabajo, _REG_TELETRABAJO_META
+    ));
 
     // Toggle acordeón en el header de la tarjeta
     var bodyVisible = false;
