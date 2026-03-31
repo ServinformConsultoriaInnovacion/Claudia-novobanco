@@ -2,8 +2,8 @@
 ## Herramienta Universal de Dimensionamiento WFM con Erlang C
 ## Previsión de Llamadas + AHT → Agentes Necesarios
 
-**Fecha:** 27 de marzo de 2026  
-**Versión:** 1.2  
+**Fecha:** 31 de marzo de 2026  
+**Versión:** 1.3  
 **Autor:** PAX Servinform  
 
 ---
@@ -298,16 +298,55 @@ El Excel tiene la misma estructura que Claudia Orange:
 
 Todo lo que se carga desde Excel es **editable desde la UI** después de la carga. No hay datos "bloqueados".
 
-**B2. Editor de Previsión de Llamadas (tabla interactiva)**
+**B2. Editor de Previsión de Llamadas (Panel Previsión — implementado)**
 
-- Tabla con filas = franjas horarias, columnas = días de la semana seleccionados
-- Cada celda muestra **llamadas** y **AHT** (dos líneas dentro de la celda)
-- **Doble clic** en cualquier celda para editar inline
-- Selector de semana/mes para navegar por el periodo
-- Totales por fila y columna calculados automáticamente
-- Indicador visual "⚠️ datos editados manualmente" cuando hay ediciones post-carga
-- Botón "Resetear a datos del Excel" para deshacer ediciones
-- **Todos los campos tienen "No aplica"**: si una franja no tiene datos, se muestra vacía y se excluye del cálculo
+El Panel Previsión es un editor interactivo completo para introducir y visualizar la previsión de llamadas y AHT por servicio, franja horaria y día. Barra de herramientas con controles en este orden:
+
+| Control | Opciones | Descripción |
+|---|---|---|
+| **📅 Vista** | Semana / Mes | Semana: tabla franjas × 7 días. Mes: tabla días × franjas |
+| **Modo** | ⏱ Ver AHT / 📞 Ver llamadas | Toggle para cambiar el valor visualizado en celdas |
+| **Horario** | Inicio 00:00–23:00 · Fin 01:00–24:00 | Configura el rango horario activo del servicio |
+| **Granularidad** | 15 min / 30 min / 1 h | Tamaño de franja horaria |
+| **📊 Gráfico** | Alterna tabla ↔ gráfico | Activa la vista gráfica combinada |
+| **📂 Cargar Excel** | Drag & drop o clic | Carga previsión desde fichero XLSX |
+| **🧪 Demo** | — | Genera datos sintéticos realistas (reactivo a horario y granularidad) |
+| **📥 Ejemplo** | — | Descarga plantilla Excel de ejemplo |
+| **🗑 Limpiar** | — | Elimina todos los datos de previsión |
+
+**Vista Tabla:**
+- **Vista Semana**: filas = franjas horarias, columnas = 7 días de la semana. Navegación ◀/▶ por semana, botón "Hoy".
+- **Vista Mes**: filas = días del mes (con color de fondo verde claro en sábado/domingo), columnas = franjas horarias. Navegación ◀/▶ por mes.
+- Cada celda muestra el valor activo (llamadas o AHT). Doble clic → edición inline.
+- Totales por fila (suma diaria) y por columna (suma por franja) calculados automáticamente. Columna AHT promedio ponderado en el total.
+- Indicador visual "⚠️ datos editados manualmente" cuando hay ediciones post-carga.
+
+**Edición masiva con popover:**
+- **Clic en cabecera de franja** (columna) → abre popover "⏱ Franja HH:MM" con dos bloques de checkboxes:
+  - Bloque A — Franjas: franja clicada pre-marcada, resto desmarcadas.
+  - Bloque B — Días: todos pre-marcados.
+  - Botones "Todos" / "Ninguno" en cada bloque.
+  - Campo de valor + botón "Aplicar a selección" → escribe el valor en el **producto cartesiano** franjas × días seleccionados.
+- **Clic en cabecera de día** (fila en vista mes / columna en vista semana) → misma lógica con día pre-marcado y todas las franjas pre-marcadas.
+- Checkboxes ordenados lexicográficamente.
+
+**Navegación por teclado en modo edición:**
+- `Tab` → avanza al día siguiente (misma franja)
+- `Shift+Tab` → retrocede al día anterior
+- `Enter` → avanza a la franja siguiente (mismo día)
+- `Escape` → cancela la edición sin guardar
+
+**Vista Gráfica (Chart.js):**
+- Activada con el botón "📊 Gráfico". Tres submodos seleccionables con botones pill:
+  - **Día**: eje X = franjas del día seleccionado. Navegación ◀/▶/Hoy por día.
+  - **Semana**: eje X = franjas de los 7 días, valores agregados.
+  - **Mes**: eje X = días del mes seleccionado.
+- **Barras** (eje Y izquierdo): llamadas previstas.
+- **Línea** (eje Y derecho): AHT promedio ponderado.
+- Actualización instantánea al cambiar modo, navegar o modificar datos.
+
+**Persistencia:**
+- `State.forecast` (llamadas, AHT, flag editado) se guarda en `localStorage` con debounce 800 ms y se restaura automáticamente al recargar la página.
 
 **B3. Análisis de Plantilla (Staff)**
 
@@ -545,11 +584,21 @@ const State = {
 - **Multi-servicio con parámetros individuales** — SLA, AHT, abandono, shrinkage propios por servicio.
 - **Gestión de perfiles** — Guardar/cargar/exportar/importar múltiples configuraciones nombradas.
 - **Configuración dual** — Todo editable desde la UI Y cargable desde Excel (mismo fichero que Claudia Orange: STAFF + Previsión + Último Turno).
-- **Gráfico combinado barras+líneas** — En el mismo panel que el what-if: barras de llamadas (atendidas / fuera NDS / abandonadas) + líneas NDA y NDS. Filtrable por servicio, agregación temporal y franja.
+- **Gráfico combinado barras+líneas (Panel D)** — En el mismo panel que el what-if: barras de llamadas (atendidas / fuera NDS / abandonadas) + líneas NDA y NDS. Filtrable por servicio, agregación temporal y franja.
 - **What-if integrado con análisis** — En el mismo panel D, con recálculo instantáneo del gráfico al añadir/quitar agentes virtuales.
 - **Visualización completa en UI** — Todos los resultados visibles en pantalla sin descargar. Un único botón "Descargar Excel completo" para exportar todo.
-- **Tabla de previsión interactiva** — Editor de llamadas y AHT por franja/día con doble clic.
 - **Paleta y tipografía novobanco** — Rojo primario `#E30613`, oscuro `#1C1C1C`, variables CSS para re-theming.
+
+**Panel Previsión — implementado en `js/forecast.js`:**
+
+- **Horario de servicio configurable** — Selector inicio (00:00–23:00) y fin (01:00–24:00) en toolbar. El valor `24` se muestra como `00:00`. Genera franjas dinámicamente desde el rango definido.
+- **Granularidad configurable** — 15 min / 30 min / 1 h, seleccionable en toolbar. Regenera franjas al cambiar.
+- **Dual vista tabla** — Vista Semana (franjas × 7 días) y Vista Mes (días del mes × franjas), toggle en toolbar. Weeekends con fondo verde en la tabla mes.
+- **Vista gráfica combinada (Chart.js)** — Barras = llamadas (eje Y izquierdo) + línea = AHT promedio ponderado (eje Y derecho). Tres modos: Día (franjas del día seleccionado), Semana (franjas 7 días), Mes (1 barra por día). Navegación ◀/▶/Hoy en modo Día. Actualización instantánea.
+- **Edición masiva con popover** — Clic en cabecera de franja o día abre un popover con dos bloques de checkboxes (Franjas + Días), botones Todos/Ninguno en cada bloque y campo de valor. La aplicación afecta al **producto cartesiano** de franjas × días seleccionados.
+- **Navegación por teclado** — `Tab` (día siguiente), `Shift+Tab` (día anterior), `Enter` (franja siguiente), `Escape` (cancelar edición).
+- **Demo reactivo** — El botón 🧪 Demo genera datos sintéticos. Si hay datos demo activos, se regeneran automáticamente al cambiar granularidad u horario.
+- **Persistencia de previsión** — `State.forecast.llamadas`, `.aht` y `.editado` se incluyen en `guardarEstado()` y se restauran en `restaurarEstado()` desde `localStorage`.
 
 ---
 
@@ -594,7 +643,7 @@ const State = {
 |---|---|
 | `parser.js` | Parseo flexible: STAFF, Previsión (llamadas + AHT por franja/día/servicio), Último Turno. Detección automática de hojas y columnas |
 | Panel B1: Subida Excel | Zona de drop/clic. Last-file en IndexedDB. Banner de último archivo. Validación de hojas |
-| Panel B2: Editor de Previsión | Tabla franjas × días. Celda con dos líneas (llamadas + AHT). Edición inline doble clic. Totales automáticos. "No aplica" por celda |
+| Panel B2: Editor de Previsión | Tabla franjas × días (vista Semana) y días × franjas (vista Mes). Toggle Semana/Mes + toggle Llamadas/AHT. Horario configurable (selector inicio/fin 00–24h). Granularidad 15min/30min/1h. Edición inline doble clic. **Edición masiva con popover** (2 bloques checkbox Franjas+Días, producto cartesiano). **Navegación teclado** (Tab/Enter/Shift+Tab). **Vista gráfica** Chart.js (barras=llamadas, línea=AHT, modos Día/Semana/Mes). Totales automáticos. Demo reactivo. Persistencia `State.forecast` en localStorage. |
 | Panel B3: Análisis Staff | Resumen agentes por servicio (dinámico). Cobertura horaria. Alertas. Todo visible en UI |
 | Datos Demo | Generador sintético para todos los servicios configurados |
 
@@ -703,6 +752,14 @@ const State = {
 | Visualización UI sin descargar | ★ NUEVO | Todos los datos visibles en pantalla |
 | Config dual (Excel + UI) | ★ NUEVO | Todo editable desde UI tras cargar Excel |
 | Perfil visual novobanco | ★ NUEVO | Rojo `#E30613`, variables CSS, Nunito Sans |
+| Horario servicio configurable | ★ NUEVO (impl.) | Selector inicio/fin 00:00–24:00 en toolbar. Franjas dinámicas. |
+| Granularidad configurable | ★ NUEVO (impl.) | 15 min / 30 min / 1 h. Regenera franjas al cambiar. |
+| Vista Semana + Vista Mes | ★ NUEVO (impl.) | Toggle en toolbar. Mes: días × franjas, FDS en verde. |
+| Vista gráfica previsión (Chart.js) | ★ NUEVO (impl.) | Barras=llamadas + línea=AHT. Modos Día/Semana/Mes. |
+| Edición masiva con popover | ★ NUEVO (impl.) | Doble bloque checkbox (Franjas+Días). Producto cartesiano. |
+| Navegación teclado en previsión | ★ NUEVO (impl.) | Tab/Enter/Shift+Tab/Escape en celdas de edición inline. |
+| Demo reactivo a dimensiones | ★ NUEVO (impl.) | Regenera datos demo al cambiar granularidad u horario. |
+| Persistencia `State.forecast` | ★ NUEVO (impl.) | llamadas, AHT y flag editado guardados en localStorage. |
 
 ---
 
@@ -747,4 +804,4 @@ const State = {
 ---
 
 *Claudia novobanco · PAX Servinform · 2026*  
-*Propuesta v1.2 — Cada fase generará su documentación técnica detallada durante la implementación.*
+*Propuesta v1.3 — Cada fase generará su documentación técnica detallada durante la implementación.*

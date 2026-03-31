@@ -221,15 +221,24 @@ function _pvRenderToolbar() {
         _pvRefrescar();
     });
 
+    // ── Sherpa (previsión automática desde históricos) ────────────────
+    var btnSherpa = document.createElement('button');
+    btnSherpa.className = 'st-toolbar-btn btn btn-secondary btn-sm';
+    btnSherpa.innerHTML = '🔮 Carga Sherpa';
+    btnSherpa.title = 'Conectar con Sherpa para obtener la previsión automática a partir de llamadas históricas (próximamente)';
+    btnSherpa.disabled = true;
+    btnSherpa.style.opacity = '0.6';
+    btnSherpa.style.cursor  = 'not-allowed';
+
     // Descarga Excel de ejemplo
     var btnEjemplo = document.createElement('button');
     btnEjemplo.className = 'st-toolbar-btn btn btn-secondary btn-sm';
     btnEjemplo.innerHTML = '📥 Ejemplo';
-    btnEjemplo.title = 'Descargar Excel de ejemplo (año 2026, 3 formatos de franja)';
+    btnEjemplo.title = 'Descargar Excel de ejemplo (año actual, 3 formatos de franja: 15min / 30min / 1h)';
     btnEjemplo.addEventListener('click', _pvDescargarEjemplo);
 
     // 1-semana/mes · 2-ver AHT/llamadas · 3-horario · 4-granularidad
-    // 5-gráfico · 6-carga excel · 7-demo · 8-ejemplo · 9-limpiar
+    // 5-gráfico · 6-sherpa · 7-carga excel · 8-demo · 9-ejemplo · 10-limpiar
     tb.appendChild(btnVista);
     tb.appendChild(btnModo);
     tb.appendChild(lblHorario);
@@ -238,6 +247,7 @@ function _pvRenderToolbar() {
     tb.appendChild(selFin);
     tb.appendChild(selGran);
     tb.appendChild(btnGrafico);
+    tb.appendChild(btnSherpa);
     tb.appendChild(zona);
     tb.appendChild(btnDemo);
     tb.appendChild(btnEjemplo);
@@ -346,21 +356,26 @@ function _pvRenderTablaPanelInner(wrap) {
     }
 
     // ── Contexto según vista ──────────────────────────────────────────
-    var lunes, primerDia, diaSel, rangoLabel, hayDatos, crearTabla;
+    var lunes, primerDia, diaSel, rangoLabel, hayDatos, hayDatosPeriodo, crearTabla;
+    var svcId = _pvServicioActivo;
     if (_pvVistaGrafico && _pvGraficoModo === 'dia') {
-        diaSel     = _pvGetDiaSel(_pvDiaOffset);
-        rangoLabel = _pvFmtDia(diaSel);
-        hayDatos   = !!State.forecast.llamadas[_fecStr(diaSel)];
+        diaSel          = _pvGetDiaSel(_pvDiaOffset);
+        rangoLabel      = _pvFmtDia(diaSel);
+        var dDia        = State.forecast.llamadas[_fecStr(diaSel)];
+        hayDatosPeriodo = !!dDia;
+        hayDatos        = hayDatosPeriodo && _pvFechaTiéneSvcDatos(dDia, svcId);
         crearTabla = null;
     } else if (_pvVistaGrafico && _pvGraficoModo === 'semana' || !_pvVistaGrafico && _pvVista === 'semana') {
-        lunes      = _getLunes(_pvSemanaOffset);
-        rangoLabel = _fmtRangoSemana(lunes);
-        hayDatos   = _pvHayDatosSemana(lunes);
+        lunes           = _getLunes(_pvSemanaOffset);
+        rangoLabel      = _fmtRangoSemana(lunes);
+        hayDatosPeriodo = _pvHayDatosSemana(lunes, null);
+        hayDatos        = _pvHayDatosSemana(lunes, svcId);
         crearTabla = function() { return _pvCrearTablaSemana(lunes); };
     } else {
-        primerDia  = _pvGetPrimerDiaMes(_pvMesOffset);
-        rangoLabel = _pvFmtMes(primerDia);
-        hayDatos   = _pvHayDatosMes(primerDia);
+        primerDia       = _pvGetPrimerDiaMes(_pvMesOffset);
+        rangoLabel      = _pvFmtMes(primerDia);
+        hayDatosPeriodo = _pvHayDatosMes(primerDia, null);
+        hayDatos        = _pvHayDatosMes(primerDia, svcId);
         crearTabla = function() { return _pvCrearTablaMes(primerDia); };
     }
 
@@ -420,8 +435,16 @@ function _pvRenderTablaPanelInner(wrap) {
         var periodoLabel = (_pvVistaGrafico && _pvGraficoModo === 'dia') ? 'este día'
             : (_pvVistaGrafico ? (_pvGraficoModo === 'semana' ? 'esta semana' : 'este mes')
             : (_pvVista === 'semana' ? 'esta semana' : 'este mes'));
-        aviso.innerHTML = 'No hay datos para ' + periodoLabel + '.<br>' +
-            '<span style="font-size:11px;">Sube un Excel, pulsa <strong>Demo</strong> o descarga el <strong>Ejemplo</strong>.</span>';
+        if (!hayDatosPeriodo) {
+            aviso.innerHTML = 'No hay datos para ' + periodoLabel + '.<br>' +
+                '<span style="font-size:11px;">Sube un Excel, pulsa <strong>Demo</strong> o descarga el <strong>Ejemplo</strong>.</span>';
+        } else {
+            var svcNombreAviso = (State.config.servicios.find(function(s) { return s.id === svcId; }) || {}).nombre || svcId;
+            aviso.style.borderColor = 'var(--nb-orange)';
+            aviso.innerHTML = '⚠️ No hay datos de <strong>' + svcNombreAviso + '</strong> para ' + periodoLabel + '.<br>' +
+                '<span style="font-size:11px;">Los datos cargados pertenecen a otro servicio. ' +
+                'Cambia de servicio en la barra superior o carga un Excel con datos para este servicio.</span>';
+        }
         wrap.appendChild(aviso);
         return;
     }
@@ -847,10 +870,14 @@ function _pvPopoverMasivo(anchorEl, titulo, opts) {
 
     document.body.appendChild(pop);
 
-    var rect = anchorEl.getBoundingClientRect();
-    var top  = rect.bottom + 4;
-    var left = Math.min(rect.left, window.innerWidth - 290);
-    if (top + 520 > window.innerHeight) top = Math.max(4, rect.top - 520);
+    // Posicionamiento: calcular DESPUÉS de insertar para conocer la altura real del popover
+    var rect    = anchorEl.getBoundingClientRect();
+    var popH    = pop.getBoundingClientRect().height;
+    var popW    = pop.getBoundingClientRect().width;
+    var top     = rect.bottom + 4;
+    var left    = Math.min(rect.left, window.innerWidth - popW - 8);
+    if (left < 4) left = 4;
+    if (top + popH > window.innerHeight - 4) top = Math.max(4, rect.top - popH - 4);
     pop.style.top  = top  + 'px';
     pop.style.left = left + 'px';
 
@@ -1075,18 +1102,42 @@ function _pvNavCelda(tdActual, dim, dir) {
 
 // ── Comprobación de datos ─────────────────────────────────────────────────
 
-function _pvHayDatosMes(primerDia) {
-    var nDias = new Date(primerDia.getFullYear(), primerDia.getMonth() + 1, 0).getDate();
-    for (var d = 0; d < nDias; d++) {
-        var f = _fecStr(new Date(primerDia.getFullYear(), primerDia.getMonth(), d + 1));
-        if (State.forecast.llamadas[f]) return true;
+/**
+ * Devuelve true si el objeto de un día tiene al menos una franja
+ * con datos para el servicio indicado (o cualquiera si svcId es null).
+ */
+function _pvFechaTiéneSvcDatos(dData, svcId) {
+    if (!dData) return false;
+    var franjas = Object.keys(dData);
+    for (var fi = 0; fi < franjas.length; fi++) {
+        var fData = dData[franjas[fi]];
+        if (!fData) continue;
+        if (svcId === null) return true;   // cualquier servicio basta
+        if (fData[svcId] !== undefined) return true;
     }
     return false;
 }
 
-function _pvHayDatosSemana(lunes) {
+/**
+ * @param {Date}        primerDia
+ * @param {string|null} svcId  null = cualquier servicio
+ */
+function _pvHayDatosMes(primerDia, svcId) {
+    var nDias = new Date(primerDia.getFullYear(), primerDia.getMonth() + 1, 0).getDate();
+    for (var d = 0; d < nDias; d++) {
+        var f = _fecStr(new Date(primerDia.getFullYear(), primerDia.getMonth(), d + 1));
+        if (_pvFechaTiéneSvcDatos(State.forecast.llamadas[f], svcId)) return true;
+    }
+    return false;
+}
+
+/**
+ * @param {Date}        lunes
+ * @param {string|null} svcId  null = cualquier servicio
+ */
+function _pvHayDatosSemana(lunes, svcId) {
     for (var d = 0; d < 7; d++) {
-        if (State.forecast.llamadas[_fecStr(_addDays(lunes, d))]) return true;
+        if (_pvFechaTiéneSvcDatos(State.forecast.llamadas[_fecStr(_addDays(lunes, d))], svcId)) return true;
     }
     return false;
 }
@@ -1375,7 +1426,7 @@ function _pvCrearGrafico(ref) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-//  DESCARGA EXCEL DE EJEMPLO  (Mar–May 2026)
+//  DESCARGA EXCEL DE EJEMPLO  (año actual, 3 formatos de franja)
 //  Genera dos hojas: "Llamadas" (Fecha|Franja|Servicio|Llamadas)
 //                    "AHT"      (Fecha|Franja|Servicio|AHT)
 // ══════════════════════════════════════════════════════════════════════════
@@ -1403,14 +1454,15 @@ function _pvHojaTranspuesta(franjas, tipo, svcNombre) {
     // Cabecera
     var header = ['Día'].concat(franjas);
     var rows   = [header];
+    var anyo   = new Date().getFullYear();
 
     for (var m = 0; m < 12; m++) {
-        var nDias = new Date(2026, m + 1, 0).getDate();
+        var nDias = new Date(anyo, m + 1, 0).getDate();
         for (var d = 1; d <= nDias; d++) {
-            var dia  = new Date(2026, m, d);
+            var dia  = new Date(anyo, m, d);
             var dow  = dia.getDay();
             var fds  = (dow === 0 || dow === 6);
-            var str  = '2026-' + String(m + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+            var str  = anyo + '-' + String(m + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
             var fila = [str];
             franjas.forEach(function(franja, fi) {
                 var h    = parseInt(franja, 10) + (parseInt(franja.slice(3), 10) / 60);
@@ -1450,8 +1502,9 @@ function _pvDescargarEjemplo() {
     });
 
     var buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-    saveAs(new Blob([buf], { type: 'application/octet-stream' }), 'prevision_ejemplo_2026.xlsx');
-    toast('Excel de ejemplo descargado (año 2026 · 15min / 30min / 1h)', 'success');
+    var anyo = new Date().getFullYear();
+    saveAs(new Blob([buf], { type: 'application/octet-stream' }), 'prevision_ejemplo_' + anyo + '.xlsx');
+    toast('Excel de ejemplo descargado (año ' + anyo + ' · 15min / 30min / 1h)', 'success');
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -1488,13 +1541,4 @@ function _pvRefrescar() {
     _fSemanaOffset   = _pvSemanaOffset;
     _fContainer      = _pvContainer;
     renderModuloPrevision(_pvContainer);
-}
-
-// ── Helper chips ──────────────────────────────────────────────────────────
-
-function _pvChip(label, value) {
-    return '<div style="background:var(--nb-white);border:1px solid var(--nb-border);' +
-        'border-radius:6px;padding:8px 14px;">' +
-        '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--nb-text-light);">' + label + '</div>' +
-        '<div style="font-size:18px;font-weight:800;color:var(--nb-dark);">' + value + '</div></div>';
 }

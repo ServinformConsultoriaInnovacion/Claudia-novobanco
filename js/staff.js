@@ -335,9 +335,20 @@ function _stActualizarTbody() {
         var tdV = document.createElement('td');
         tdV.colSpan = STAFF_COLS.length + 1;
         tdV.style.cssText = 'text-align:center;padding:36px;color:var(--nb-text-light);font-size:13px;';
-        tdV.innerHTML = State.staff.todos.length
-            ? '🔍 No hay agentes con esos filtros.'
-            : '💭 Tabla vacía — sube un Excel o pulsa <strong>Datos demo</strong>.';
+        if (!State.staff.todos.length) {
+            tdV.innerHTML = '💭 Tabla vacía — sube un Excel o pulsa <strong>Datos demo</strong>.';
+        } else {
+            var hayFiltColTb = Object.keys(_stFiltrosCol).some(function(k) { return !!_stFiltrosCol[k]; });
+            tdV.innerHTML = '🔍 No hay agentes con esos filtros.';
+            if (hayFiltColTb) {
+                var btnLimpF = document.createElement('button');
+                btnLimpF.className = 'btn btn-secondary btn-sm';
+                btnLimpF.style.cssText = 'margin-left:10px;font-size:11px;vertical-align:middle;';
+                btnLimpF.textContent = '× Limpiar filtros de columna';
+                btnLimpF.addEventListener('click', _stLimpiarFiltrosCol);
+                tdV.appendChild(btnLimpF);
+            }
+        }
         trV.appendChild(tdV);
         newTbody.appendChild(trV);
     } else {
@@ -476,9 +487,20 @@ function _stRenderTabla(wrap) {
         var tdV = document.createElement('td');
         tdV.colSpan = STAFF_COLS.length + 1;
         tdV.style.cssText = 'text-align:center;padding:36px;color:var(--nb-text-light);font-size:13px;';
-        tdV.innerHTML = State.staff.todos.length
-            ? '🔍 No hay agentes con esos filtros.'
-            : '📭 Tabla vacía — sube un Excel o pulsa <strong>Datos demo</strong>.';
+        if (!State.staff.todos.length) {
+            tdV.innerHTML = '📭 Tabla vacía — sube un Excel o pulsa <strong>Datos demo</strong>.';
+        } else {
+            var hayFiltColRt = Object.keys(_stFiltrosCol).some(function(k) { return !!_stFiltrosCol[k]; });
+            tdV.innerHTML = '🔍 No hay agentes con esos filtros.';
+            if (hayFiltColRt) {
+                var btnLimpR = document.createElement('button');
+                btnLimpR.className = 'btn btn-secondary btn-sm';
+                btnLimpR.style.cssText = 'margin-left:10px;font-size:11px;vertical-align:middle;';
+                btnLimpR.textContent = '× Limpiar filtros de columna';
+                btnLimpR.addEventListener('click', _stLimpiarFiltrosCol);
+                tdV.appendChild(btnLimpR);
+            }
+        }
         trV.appendChild(tdV);
         tbody.appendChild(trV);
     } else {
@@ -788,18 +810,6 @@ function _stMoverFoco(td, dCol, dRow) {
     }
 }
 
-function _stAsegurarDatalistCol(col) {
-    var dlId = 'dl_' + col.key;
-    if (document.getElementById(dlId)) return dlId;
-    var dl = document.createElement('datalist');
-    dl.id  = dlId;
-    (col.opts || []).forEach(function(t) {
-        var o = document.createElement('option'); o.value = t; dl.appendChild(o);
-    });
-    document.body.appendChild(dl);
-    return dlId;
-}
-
 // ── Get / Set valor de agente ────────────────────────────────────────────
 
 // ── Factoría de agente vacío ──────────────────────────────────────────────
@@ -957,7 +967,6 @@ function _stCargarExcel(file) {
             _stBanner('✅ ' + n + ' agentes cargados desde "' + _stEsc(file.name) + '"', 'ok');
             _stActualizar();
             guardarEstado(); // guardar inmediatamente, sin esperar debounce
-            toast(n + ' agentes cargados', 'success');
         } catch (err) {
             ocultarProgreso();
             toast('Error al cargar: ' + err.message, 'error');
