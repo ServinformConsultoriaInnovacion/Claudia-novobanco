@@ -221,7 +221,7 @@ function _stRenderToolbar() {
 
     var btnDemo = document.createElement('button');
     btnDemo.className = 'btn btn-secondary btn-sm st-toolbar-btn';
-    btnDemo.title     = 'Genera 20 agentes de prueba para explorar la herramienta';
+    btnDemo.title     = 'Genera 5 agentes de prueba por servicio (máx. 20) para explorar la herramienta';
     btnDemo.innerHTML = '🧪 Datos demo';
     btnDemo.addEventListener('click', generarDemoStaff);
 
@@ -1246,7 +1246,8 @@ function generarDemoStaff() {
     var turnos  = STAFF_TURNOS;
     var sedes   = STAFF_SEDES;
 
-    State.staff.todos = codigos.map(function(cod, i) {
+    var N = Math.min(servicios.length * 5, codigos.length);
+    State.staff.todos = codigos.slice(0, N).map(function(cod, i) {
         var svc    = servicios[i % servicios.length];
         var turno  = turnos[i % turnos.length];
         var estado = i === 3 ? 'IT' : (i === 7 ? 'MAT' : 'ACTIVO');
@@ -1282,7 +1283,7 @@ function generarDemoStaff() {
     _stRecalcActivos();
     _stActualizar();
     guardarEstado(); // guardar inmediatamente tras generar demo
-    toast('20 agentes demo generados', 'success');
+    toast(N + ' agente' + (N !== 1 ? 's' : '') + ' demo generados (' + servicios.length + ' servicio' + (servicios.length !== 1 ? 's' : '') + ')', 'success');
 }
 
 // ── Helpers privados ──────────────────────────────────────────────────────
@@ -1301,6 +1302,11 @@ function _stEsc(str) {
 function _stValidarAgente(agente) {
     var warns = [];
     var turno = (agente.tipoTurno || '').toUpperCase();
+
+    // Código vacío
+    if (!(agente.codigo || '').trim()) {
+        warns.push('El agente no tiene código asignado');
+    }
 
     var tieneT = function(n) {
         switch (n) {
@@ -1325,6 +1331,21 @@ function _stValidarAgente(agente) {
 
     if (turno.indexOf('PARTIDO') !== -1 && !(agente.horarioPartido || '').trim()) {
         warns.push('Turno PARTIDO: el campo HORARIO PARTIDO no puede estar vacío');
+    }
+
+    // Vacaciones solapadas
+    var periodos = [];
+    for (var vi = 1; vi <= 4; vi++) {
+        var iniV = agente['inicioVac' + vi];
+        var finV = agente['finVac'    + vi];
+        if (iniV && finV) periodos.push({ ini: iniV, fin: finV, n: vi });
+    }
+    for (var a = 0; a < periodos.length - 1; a++) {
+        for (var b = a + 1; b < periodos.length; b++) {
+            if (periodos[a].ini <= periodos[b].fin && periodos[b].ini <= periodos[a].fin) {
+                warns.push('Vacaciones ' + periodos[a].n + ' y ' + periodos[b].n + ' se solapan');
+            }
+        }
     }
 
     return warns;

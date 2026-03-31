@@ -994,6 +994,8 @@ function _pvEditarCelda(td) {
             State.forecast.editado = true;
             programarGuardado();
             _pvRenderCelda(td, llam0, v, modo);
+            _pvActualizarStats();
+            _pvActualizarInfo();
         }
         inp.addEventListener('blur', ok);
         inp.addEventListener('keydown', function(e) {
@@ -1038,6 +1040,8 @@ function _pvEditarCelda(td) {
             State.forecast.editado = true;
             programarGuardado();
             _pvRenderCelda(td, llam, aht, modo);
+            _pvActualizarStats();
+            _pvActualizarInfo();
         }
         function cancelar() { _pvRenderCelda(td, llam0, aht0, modo); }
 
