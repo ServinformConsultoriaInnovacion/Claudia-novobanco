@@ -146,6 +146,7 @@ function crearReglaExcepcion(nombre) {
             tiposContrato:   [],   // 'completo'|'parcial_75'|'parcial_50'
             gruposPro:       [],   // 'teleoperador'|'especialista'|'supervisor'
             sedes:           [],
+            agentes:         [],   // codigos individuales []
             antiguedadMin:   null,
             antiguedadMax:   null,
             franjas:         null  // null | { desde:'HH:MM', hasta:'HH:MM', dias:[0..6] }

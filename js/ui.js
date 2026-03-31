@@ -1055,10 +1055,28 @@ function _rRegla_seccionFiltros(regla) {
         sec.appendChild(fila);
     });
 
+    // ── Buscador de agentes individuales ───────────────────────────────
+    var filaAgentes = document.createElement('div');
+    filaAgentes.style.cssText = 'display:flex;align-items:flex-start;gap:8px;margin-bottom:7px;';
+
+    var lblAg = document.createElement('span');
+    lblAg.textContent = 'Agentes';
+    lblAg.style.cssText = 'font-size:11px;color:var(--nb-text-light);width:90px;flex-shrink:0;padding-top:4px;';
+
+    var wrapAg = document.createElement('div');
+    wrapAg.style.cssText = 'flex:1;display:flex;flex-direction:column;gap:6px;';
+    _rRegla_buscadorAgentes(wrapAg, regla.filtro.agentes, sec);
+
+    filaAgentes.appendChild(lblAg);
+    filaAgentes.appendChild(wrapAg);
+    sec.appendChild(filaAgentes);
+
     var descripcion = document.createElement('div');
     var tieneFilOS = regla.filtro.servicios.length ||
                      regla.filtro.tiposTurno.length ||
-                     regla.filtro.estados.length;
+                     regla.filtro.estados.length  ||
+                     regla.filtro.sedes.length     ||
+                     regla.filtro.agentes.length;
     descripcion.textContent = tieneFilOS
         ? '⚡ La regla aplica solo a agentes que cumplan los filtros anteriores.'
         : '🌐 Sin filtros — la regla aplica a todo el staff.';
@@ -1070,6 +1088,133 @@ function _rRegla_seccionFiltros(regla) {
     sec.appendChild(hr);
 
     return sec;
+}
+
+/**
+ * Buscador de agentes individuales con autocompletado + paste desde Excel.
+ * wrapEl: contenedor flex-column donde se renderiza
+ * agentesArr: array mutable de codigos seleccionados (regla.filtro.agentes)
+ * secPadre: el elemento de la sección filtros (para re-render del aviso)
+ */
+function _rRegla_buscadorAgentes(wrapEl, agentesArr, secPadre) {
+    wrapEl.innerHTML = '';
+
+    // ── Chips de agentes ya seleccionados ──────────────────────────────
+    if (agentesArr.length) {
+        var chipsWrap = document.createElement('div');
+        chipsWrap.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;';
+        agentesArr.forEach(function(codigo) {
+            var agente = State.staff.todos.find(function(a) { return a.codigo === codigo; });
+            var label  = agente
+                ? codigo + (agente.nombre ? ' · ' + agente.nombre : '')
+                : codigo + ' ⚠️';
+
+            var chip = document.createElement('span');
+            chip.style.cssText = 'display:inline-flex;align-items:center;gap:2px;padding:2px 8px 2px 9px;' +
+                'background:var(--nb-primary-light);border:1px solid var(--nb-primary-mid);' +
+                'border-radius:12px;font-size:11px;color:var(--nb-text);white-space:nowrap;';
+            chip.appendChild(document.createTextNode(label));
+
+            var btnX = document.createElement('button');
+            btnX.textContent = '×';
+            btnX.title = 'Quitar';
+            btnX.style.cssText = 'background:none;border:none;cursor:pointer;font-size:13px;' +
+                'line-height:1;padding:0 0 1px 3px;color:var(--nb-text-light);';
+            btnX.addEventListener('click', function(e) {
+                e.stopPropagation();
+                var idx = agentesArr.indexOf(codigo);
+                if (idx > -1) agentesArr.splice(idx, 1);
+                _rRegla_buscadorAgentes(wrapEl, agentesArr, secPadre);
+                programarGuardado();
+            });
+            chip.appendChild(btnX);
+            chipsWrap.appendChild(chip);
+        });
+        wrapEl.appendChild(chipsWrap);
+    }
+
+    // ── Input buscador ─────────────────────────────────────────────────
+    var inputWrap = document.createElement('div');
+    inputWrap.style.cssText = 'position:relative;';
+
+    var inp = document.createElement('input');
+    inp.type        = 'text';
+    inp.placeholder = State.staff.todos.length
+        ? '🔍 Buscar por código o nombre... (o pegar columna de Excel)'
+        : '⚠️ Carga staff primero';
+    inp.disabled    = !State.staff.todos.length;
+    inp.style.cssText = 'width:100%;padding:5px 9px;border:1px solid var(--nb-border);' +
+        'border-radius:4px;font-size:12px;font-family:inherit;box-sizing:border-box;';
+
+    var dropdown = document.createElement('div');
+    dropdown.style.cssText = 'display:none;position:absolute;top:100%;left:0;right:0;z-index:200;' +
+        'background:#fff;border:1px solid var(--nb-border);border-top:none;border-radius:0 0 4px 4px;' +
+        'max-height:160px;overflow-y:auto;box-shadow:0 4px 8px rgba(0,0,0,0.08);';
+
+    function _mostrarSugerencias(q) {
+        dropdown.innerHTML = '';
+        if (!q) { dropdown.style.display = 'none'; return; }
+        var ql = q.toLowerCase();
+        var candidatos = State.staff.todos.filter(function(a) {
+            if (agentesArr.indexOf(a.codigo) > -1) return false;
+            return (a.codigo   || '').toLowerCase().indexOf(ql) > -1 ||
+                   (a.nombre   || '').toLowerCase().indexOf(ql) > -1;
+        }).slice(0, 10);
+
+        if (!candidatos.length) {
+            dropdown.style.display = 'none';
+            return;
+        }
+        candidatos.forEach(function(a) {
+            var it = document.createElement('div');
+            it.style.cssText = 'padding:6px 10px;cursor:pointer;font-size:12px;' +
+                'border-bottom:1px solid var(--nb-border);';
+            it.textContent = a.codigo + (a.nombre ? ' · ' + a.nombre : '') +
+                (a.servicio ? '  [' + a.servicio + ']' : '');
+            it.addEventListener('mousedown', function(e) {
+                e.preventDefault();
+                agentesArr.push(a.codigo);
+                inp.value = '';
+                dropdown.style.display = 'none';
+                _rRegla_buscadorAgentes(wrapEl, agentesArr, secPadre);
+                programarGuardado();
+            });
+            it.addEventListener('mouseover', function() { it.style.background = 'var(--nb-primary-light)'; });
+            it.addEventListener('mouseout',  function() { it.style.background = ''; });
+            dropdown.appendChild(it);
+        });
+        dropdown.style.display = '';
+    }
+
+    inp.addEventListener('input', function() { _mostrarSugerencias(inp.value.trim()); });
+    inp.addEventListener('blur',  function() { setTimeout(function() { dropdown.style.display = 'none'; }, 150); });
+    inp.addEventListener('focus', function() { if (inp.value.trim()) _mostrarSugerencias(inp.value.trim()); });
+
+    // Paste desde Excel: detecta saltos de línea o punto y coma → añade múltiples códigos
+    inp.addEventListener('paste', function(e) {
+        e.preventDefault();
+        var text = (e.clipboardData || window.clipboardData).getData('text');
+        var codigos = text.split(/[\n\r\t;,]+/).map(function(c) { return c.trim(); }).filter(Boolean);
+        var anadidos = 0;
+        codigos.forEach(function(cod) {
+            var existe = State.staff.todos.some(function(a) { return a.codigo === cod; });
+            if (existe && agentesArr.indexOf(cod) < 0) {
+                agentesArr.push(cod);
+                anadidos++;
+            }
+        });
+        if (anadidos) {
+            _rRegla_buscadorAgentes(wrapEl, agentesArr, secPadre);
+            programarGuardado();
+            toast(anadidos + ' agente' + (anadidos > 1 ? 's' : '') + ' añadido' + (anadidos > 1 ? 's' : ''), 'success');
+        } else {
+            toast('No se encontraron códigos en el staff cargado', 'warning');
+        }
+    });
+
+    inputWrap.appendChild(inp);
+    inputWrap.appendChild(dropdown);
+    wrapEl.appendChild(inputWrap);
 }
 
 /**
