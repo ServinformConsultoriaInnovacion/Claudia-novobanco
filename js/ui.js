@@ -1071,12 +1071,102 @@ function _rRegla_seccionFiltros(regla) {
     filaAgentes.appendChild(wrapAg);
     sec.appendChild(filaAgentes);
 
+    // ── Días de la semana ─────────────────────────────────────────
+    var filaDias = document.createElement('div');
+    filaDias.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:7px;';
+
+    var lblDias = document.createElement('span');
+    lblDias.textContent = 'Días';
+    lblDias.style.cssText = 'font-size:11px;color:var(--nb-text-light);width:90px;flex-shrink:0;';
+
+    var wrapDias = document.createElement('div');
+    wrapDias.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;flex:1;';
+
+    var DIAS = [
+        { val: 1, label: 'L' }, { val: 2, label: 'M' }, { val: 3, label: 'X' },
+        { val: 4, label: 'J' }, { val: 5, label: 'V' }, { val: 6, label: 'S' },
+        { val: 0, label: 'D' }
+    ];
+    DIAS.forEach(function(d) {
+        var activo = regla.filtro.diasSemana.indexOf(d.val) > -1;
+        var btn = document.createElement('button');
+        btn.textContent = d.label;
+        btn.dataset.dia = d.val;
+        btn.title = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][d.val];
+        btn.style.cssText = 'width:26px;height:26px;border-radius:50%;font-size:11px;font-weight:700;' +
+            'cursor:pointer;transition:all 0.15s;border:1px solid ' +
+            (activo ? 'var(--nb-primary)' : 'var(--nb-border)') + ';' +
+            'background:' + (activo ? 'var(--nb-primary)' : '#fff') + ';' +
+            'color:'       + (activo ? '#fff'              : 'var(--nb-text-light)') + ';';
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            var idx = regla.filtro.diasSemana.indexOf(d.val);
+            if (idx > -1) {
+                regla.filtro.diasSemana.splice(idx, 1);
+                btn.style.background   = '#fff';
+                btn.style.borderColor  = 'var(--nb-border)';
+                btn.style.color        = 'var(--nb-text-light)';
+            } else {
+                regla.filtro.diasSemana.push(d.val);
+                btn.style.background   = 'var(--nb-primary)';
+                btn.style.borderColor  = 'var(--nb-primary)';
+                btn.style.color        = '#fff';
+            }
+            programarGuardado();
+        });
+        wrapDias.appendChild(btn);
+    });
+
+    // Botones rápidos
+    var btnLV = document.createElement('button');
+    btnLV.textContent = 'L–V';
+    btnLV.title = 'Seleccionar lunes a viernes';
+    btnLV.style.cssText = 'padding:2px 7px;font-size:10px;border:1px solid var(--nb-border);' +
+        'border-radius:4px;background:#fff;cursor:pointer;margin-left:6px;color:var(--nb-text-light);';
+    btnLV.addEventListener('click', function(e) {
+        e.stopPropagation();
+        regla.filtro.diasSemana = [1,2,3,4,5];
+        _rRegla_refrescarDias(wrapDias, regla.filtro.diasSemana);
+        programarGuardado();
+    });
+
+    var btnFDS = document.createElement('button');
+    btnFDS.textContent = 'FDS';
+    btnFDS.title = 'Seleccionar sábado y domingo';
+    btnFDS.style.cssText = btnLV.style.cssText;
+    btnFDS.addEventListener('click', function(e) {
+        e.stopPropagation();
+        regla.filtro.diasSemana = [6,0];
+        _rRegla_refrescarDias(wrapDias, regla.filtro.diasSemana);
+        programarGuardado();
+    });
+
+    var btnTodos = document.createElement('button');
+    btnTodos.textContent = 'Todos';
+    btnTodos.title = 'Deseleccionar todos los días (sin restricción)';
+    btnTodos.style.cssText = btnLV.style.cssText;
+    btnTodos.addEventListener('click', function(e) {
+        e.stopPropagation();
+        regla.filtro.diasSemana = [];
+        _rRegla_refrescarDias(wrapDias, regla.filtro.diasSemana);
+        programarGuardado();
+    });
+
+    wrapDias.appendChild(btnLV);
+    wrapDias.appendChild(btnFDS);
+    wrapDias.appendChild(btnTodos);
+
+    filaDias.appendChild(lblDias);
+    filaDias.appendChild(wrapDias);
+    sec.appendChild(filaDias);
+
     var descripcion = document.createElement('div');
-    var tieneFilOS = regla.filtro.servicios.length ||
-                     regla.filtro.tiposTurno.length ||
-                     regla.filtro.estados.length  ||
-                     regla.filtro.sedes.length     ||
-                     regla.filtro.agentes.length;
+    var tieneFilOS = regla.filtro.servicios.length   ||
+                     regla.filtro.tiposTurno.length  ||
+                     regla.filtro.estados.length     ||
+                     regla.filtro.sedes.length       ||
+                     regla.filtro.agentes.length     ||
+                     regla.filtro.diasSemana.length;
     descripcion.textContent = tieneFilOS
         ? '⚡ La regla aplica solo a agentes que cumplan los filtros anteriores.'
         : '🌐 Sin filtros — la regla aplica a todo el staff.';
@@ -1088,6 +1178,22 @@ function _rRegla_seccionFiltros(regla) {
     sec.appendChild(hr);
 
     return sec;
+}
+
+/**
+ * Refresca el estado visual de los botones de días de la semana
+ * sin reconstruir toda la sección.
+ */
+function _rRegla_refrescarDias(wrapDias, diasArr) {
+    var VALS = [1,2,3,4,5,6,0];
+    var btns = wrapDias.querySelectorAll('button[data-dia]');
+    btns.forEach(function(btn) {
+        var val = parseInt(btn.dataset.dia, 10);
+        var activo = diasArr.indexOf(val) > -1;
+        btn.style.background  = activo ? 'var(--nb-primary)' : '#fff';
+        btn.style.borderColor = activo ? 'var(--nb-primary)' : 'var(--nb-border)';
+        btn.style.color       = activo ? '#fff'              : 'var(--nb-text-light)';
+    });
 }
 
 /**

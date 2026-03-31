@@ -147,6 +147,7 @@ function crearReglaExcepcion(nombre) {
             gruposPro:       [],   // 'teleoperador'|'especialista'|'supervisor'
             sedes:           [],
             agentes:         [],   // codigos individuales []
+            diasSemana:      [],   // [1,2,3,4,5,6,0]  1=Lun … 6=Sáb, 0=Dom  [] = todos
             antiguedadMin:   null,
             antiguedadMax:   null,
             franjas:         null  // null | { desde:'HH:MM', hasta:'HH:MM', dias:[0..6] }
