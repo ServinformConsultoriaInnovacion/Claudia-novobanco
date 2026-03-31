@@ -720,8 +720,11 @@ function _rRegla_crearTarjeta(regla) {
     var body = document.createElement('div');
     body.style.cssText = 'padding:12px 14px;border-top:1px solid var(--nb-border);display:none;';
 
+    // Bloque filtros (Fase 3)
+    body.appendChild(_rRegla_seccionFiltros(regla));
+
     var titBase = document.createElement('div');
-    titBase.textContent = 'Cálculo base';
+    titBase.textContent = 'Excepciones · Cálculo base';
     titBase.style.cssText = 'font-size:10px;font-weight:700;color:var(--nb-text-light);' +
         'text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px;';
     body.appendChild(titBase);
@@ -792,6 +795,165 @@ function _rRegla_filaParam(regla, meta) {
     fila.appendChild(inp);
     fila.appendChild(uni);
     return fila;
+}
+
+// ── A2: helpers filtros (Fase 3) ─────────────────────────────────────────
+
+var _TIPOS_TURNO_FILTRO = [
+    { value: 'manana',          label: 'Mañana'          },
+    { value: 'tarde',           label: 'Tarde'           },
+    { value: 'noche',           label: 'Noche'           },
+    { value: 'fds',             label: 'FDS'             },
+    { value: 'partido',         label: 'Partido'         },
+    { value: 'guardia',         label: 'Guardia'         }
+];
+
+var _ESTADOS_AGENTE_FILTRO = [
+    { value: 'fijo',            label: 'Fijo'            },
+    { value: 'temporal',        label: 'Temporal'        },
+    { value: 'excedencia',      label: 'Excedencia'      },
+    { value: 'reduccion_activa',label: 'Reducción activa' }
+];
+
+/**
+ * Renderiza el bloque «A quién aplica» con los filtros estáticos
+ * (servicio, tipo de turno, estado del agente).
+ */
+function _rRegla_seccionFiltros(regla) {
+    var sec = document.createElement('div');
+    sec.style.marginBottom = '2px';
+
+    var tit = document.createElement('div');
+    tit.textContent = 'A quién aplica (filtro)';
+    tit.style.cssText = 'font-size:10px;font-weight:700;color:var(--nb-primary);' +
+        'text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;';
+    sec.appendChild(tit);
+
+    var defs = [
+        {
+            label:   'Servicio',
+            opciones: function() {
+                return State.config.servicios.map(function(s) {
+                    return { value: s.id, label: s.nombre };
+                });
+            },
+            selArr: regla.filtro.servicios
+        },
+        {
+            label:   'Tipo de turno',
+            opciones: function() { return _TIPOS_TURNO_FILTRO; },
+            selArr: regla.filtro.tiposTurno
+        },
+        {
+            label:   'Estado agente',
+            opciones: function() { return _ESTADOS_AGENTE_FILTRO; },
+            selArr: regla.filtro.estados
+        }
+    ];
+
+    defs.forEach(function(def) {
+        var fila = document.createElement('div');
+        fila.style.cssText = 'display:flex;align-items:flex-start;gap:8px;margin-bottom:7px;';
+
+        var lbl = document.createElement('span');
+        lbl.textContent = def.label;
+        lbl.style.cssText = 'font-size:11px;color:var(--nb-text-light);width:90px;' +
+            'flex-shrink:0;padding-top:4px;';
+
+        var wrap = document.createElement('div');
+        _rRegla_chipMulti(wrap, def.opciones(), def.selArr, programarGuardado);
+
+        fila.appendChild(lbl);
+        fila.appendChild(wrap);
+        sec.appendChild(fila);
+    });
+
+    var descripcion = document.createElement('div');
+    var tieneFilOS = regla.filtro.servicios.length ||
+                     regla.filtro.tiposTurno.length ||
+                     regla.filtro.estados.length;
+    descripcion.textContent = tieneFilOS
+        ? '⚡ La regla aplica solo a agentes que cumplan los filtros anteriores.'
+        : '🌐 Sin filtros — la regla aplica a todo el staff.';
+    descripcion.style.cssText = 'font-size:11px;color:var(--nb-text-light);font-style:italic;margin-bottom:10px;';
+    sec.appendChild(descripcion);
+
+    var hr = document.createElement('hr');
+    hr.style.cssText = 'border:none;border-top:1px solid var(--nb-border);margin:6px 0 12px;';
+    sec.appendChild(hr);
+
+    return sec;
+}
+
+/**
+ * Renderiza un selector multi-chip dentro de `wrapEl`.
+ * opciones: [{value, label}]   selArr: array mutable del filtro
+ * onChg: callback al cambiar la selección
+ */
+function _rRegla_chipMulti(wrapEl, opciones, selArr, onChg) {
+    wrapEl.innerHTML = '';
+    wrapEl.style.cssText = 'display:flex;flex-wrap:wrap;align-items:center;gap:4px;min-height:24px;flex:1;';
+
+    if (!selArr.length) {
+        var todos = document.createElement('span');
+        todos.textContent = '(todos)';
+        todos.style.cssText = 'font-size:11px;color:var(--nb-text-light);font-style:italic;margin-right:4px;padding-top:2px;';
+        wrapEl.appendChild(todos);
+    }
+
+    selArr.forEach(function(val) {
+        var opt = opciones.find(function(o) { return o.value === val; });
+        var label = opt ? opt.label : val;
+
+        var chip = document.createElement('span');
+        chip.style.cssText = 'display:inline-flex;align-items:center;gap:2px;padding:2px 8px 2px 9px;' +
+            'background:var(--nb-primary-light);border:1px solid var(--nb-primary-mid);' +
+            'border-radius:12px;font-size:11px;color:var(--nb-text);white-space:nowrap;';
+
+        var txt = document.createTextNode(label);
+        var btnX = document.createElement('button');
+        btnX.textContent = '×';
+        btnX.title = 'Quitar';
+        btnX.style.cssText = 'background:none;border:none;cursor:pointer;font-size:13px;line-height:1;' +
+            'padding:0 0 1px 3px;color:var(--nb-text-light);';
+        btnX.addEventListener('click', function(e) {
+            e.stopPropagation();
+            var idx = selArr.indexOf(val);
+            if (idx > -1) selArr.splice(idx, 1);
+            _rRegla_chipMulti(wrapEl, opciones, selArr, onChg);
+            onChg();
+        });
+
+        chip.appendChild(txt);
+        chip.appendChild(btnX);
+        wrapEl.appendChild(chip);
+    });
+
+    var pendientes = opciones.filter(function(o) { return selArr.indexOf(o.value) < 0; });
+    if (pendientes.length) {
+        var addSel = document.createElement('select');
+        addSel.style.cssText = 'padding:2px 4px;border:1px solid var(--nb-border);border-radius:4px;' +
+            'font-size:11px;font-family:inherit;color:var(--nb-text-light);cursor:pointer;max-width:130px;';
+        var dflt = document.createElement('option');
+        dflt.value = '';
+        dflt.textContent = '+ Añadir...';
+        addSel.appendChild(dflt);
+        pendientes.forEach(function(o) {
+            var opt2 = document.createElement('option');
+            opt2.value = o.value;
+            opt2.textContent = o.label;
+            addSel.appendChild(opt2);
+        });
+        addSel.addEventListener('click', function(e) { e.stopPropagation(); });
+        addSel.addEventListener('change', function() {
+            if (addSel.value) {
+                selArr.push(addSel.value);
+                _rRegla_chipMulti(wrapEl, opciones, selArr, onChg);
+                onChg();
+            }
+        });
+        wrapEl.appendChild(addSel);
+    }
 }
 
 // ── A3: Perfiles ──────────────────────────────────────────────────────────
