@@ -716,6 +716,7 @@ function _pvCrearTablaMes(primerDia) {
         // Columna total / promedio AHT fila
         var tdTot = document.createElement('td');
         tdTot.style.cssText = 'font-size:11px;font-weight:700;background:rgba(0,0,0,0.04);text-align:right;padding:3px 5px;';
+        tdTot.dataset.totFila = fechaStr;   // permite actualización inline
         if (esAHT) {
             tdTot.textContent = rowAhtN ? Math.round(rowAhtSum / rowAhtN) + ' s' : '—';
         } else {
@@ -736,6 +737,7 @@ function _pvCrearTablaMes(primerDia) {
     franjas.forEach(function(franja, fi) {
         var td = document.createElement('td');
         td.style.cssText = 'font-size:10px;text-align:right;padding:3px 4px;';
+        td.dataset.totCol = franja;         // permite actualización inline
         if (esAHT) {
             td.textContent = franjaAhtN[fi] ? Math.round(franjaAhtSum[fi] / franjaAhtN[fi]) + ' s' : '—';
         } else {
@@ -744,6 +746,7 @@ function _pvCrearTablaMes(primerDia) {
         trTot.appendChild(td);
     });
     var tdGrand = document.createElement('td');
+    tdGrand.id = 'pvTotGrand';
     tdGrand.style.cssText = 'font-size:11px;text-align:right;padding:3px 5px;';
     if (esAHT) {
         tdGrand.textContent = grandAhtN ? Math.round(grandAhtSum / grandAhtN) + ' s' : '—';
@@ -977,6 +980,70 @@ function _pvRenderCelda(td, llam, aht, modo) {
     }
 }
 
+// ── Actualización de totales tras edición inline ─────────────────────────
+
+/**
+ * Recalcula y actualiza las celdas de total afectadas por la edición de
+ * la celda (editFecha, editFranja) sin reconstruir la tabla.
+ *
+ * Funciona para ambos layouts:
+ *   Mes:    filas=fechas,  data-tot-fila=fecha,  data-tot-col=franja
+ *   Semana: filas=franjas, data-tot-fila=franja, data-tot-col=fecha
+ */
+function _pvActualizarTotalesTabla(editFecha, editFranja) {
+    var tabla = document.getElementById('fTabla');
+    if (!tabla) return;
+    var svcId = _pvServicioActivo;
+    var esAHT = (_pvModo === 'aht');
+
+    // Recopilar todas las fechas y franjas visibles en la tabla
+    var visFechas  = {};
+    var visFranjas = {};
+    tabla.querySelectorAll('td[data-fecha][data-franja]').forEach(function(c) {
+        visFechas[c.dataset.fecha]   = true;
+        visFranjas[c.dataset.franja] = true;
+    });
+    var allFechas  = Object.keys(visFechas);
+    var allFranjas = Object.keys(visFranjas);
+
+    function _sumLlam(fechas, franjas) {
+        var s = 0;
+        fechas.forEach(function(fe) {
+            franjas.forEach(function(fr) { s += _getLlam(fe, fr, svcId); });
+        });
+        return s;
+    }
+    function _avgAHT(fechas, franjas) {
+        var s = 0, n = 0;
+        fechas.forEach(function(fe) {
+            franjas.forEach(function(fr) {
+                var a = _getAHT(fe, fr, svcId);
+                if (a > 0) { s += a; n++; }
+            });
+        });
+        return n ? Math.round(s / n) : 0;
+    }
+    function _fmt(val) {
+        return esAHT ? (val ? val + ' s' : '—') : (val ? fmtNum(val) : '—');
+    }
+
+    // Total de fila para editFecha (tabla mes) o editFranja (tabla semana)
+    var cellFilaF = tabla.querySelector('[data-tot-fila="' + editFecha  + '"]');
+    var cellFilaA = tabla.querySelector('[data-tot-fila="' + editFranja + '"]');
+    if (cellFilaF) cellFilaF.textContent = _fmt(esAHT ? _avgAHT([editFecha],  allFranjas) : _sumLlam([editFecha],  allFranjas));
+    if (cellFilaA) cellFilaA.textContent = _fmt(esAHT ? _avgAHT(allFechas, [editFranja]) : _sumLlam(allFechas, [editFranja]));
+
+    // Total de columna para editFranja (tabla mes) o editFecha (tabla semana)
+    var cellColF = tabla.querySelector('[data-tot-col="' + editFranja + '"]');
+    var cellColA = tabla.querySelector('[data-tot-col="' + editFecha  + '"]');
+    if (cellColF) cellColF.textContent = _fmt(esAHT ? _avgAHT(allFechas, [editFranja]) : _sumLlam(allFechas, [editFranja]));
+    if (cellColA) cellColA.textContent = _fmt(esAHT ? _avgAHT([editFecha],  allFranjas) : _sumLlam([editFecha],  allFranjas));
+
+    // Gran total
+    var cellGrand = document.getElementById('pvTotGrand');
+    if (cellGrand) cellGrand.textContent = _fmt(esAHT ? _avgAHT(allFechas, allFranjas) : _sumLlam(allFechas, allFranjas));
+}
+
 // ── Edición inline ────────────────────────────────────────────────────────
 
 function _pvEditarCelda(td) {
@@ -1001,6 +1068,7 @@ function _pvEditarCelda(td) {
             State.forecast.editado = true;
             programarGuardado();
             _pvRenderCelda(td, llam0, v, modo);
+            _pvActualizarTotalesTabla(fecha, franja);
             _pvActualizarStats();
             _pvActualizarInfo();
         }
@@ -1047,6 +1115,7 @@ function _pvEditarCelda(td) {
             State.forecast.editado = true;
             programarGuardado();
             _pvRenderCelda(td, llam, aht, modo);
+            _pvActualizarTotalesTabla(fecha, franja);
             _pvActualizarStats();
             _pvActualizarInfo();
         }
@@ -1288,6 +1357,7 @@ function _pvCrearTablaSemana(lunes) {
 
         var tdTot = document.createElement('td');
         tdTot.style.cssText = 'font-size:12px;font-weight:700;background:var(--nb-grey-bg);text-align:right;padding:4px 6px;';
+        tdTot.dataset.totFila = franja;     // permite actualización inline
         tdTot.textContent = esAHT
             ? (rowAhtN ? Math.round(rowAhtSum / rowAhtN) + ' s' : '—')
             : (rowTotal ? fmtNum(rowTotal) : '—');
@@ -1305,12 +1375,14 @@ function _pvCrearTablaSemana(lunes) {
     for (var di = 0; di < 7; di++) {
         var tdC = document.createElement('td');
         tdC.style.cssText = 'font-size:12px;text-align:right;padding:4px 6px;';
+        tdC.dataset.totCol = fechas[di];    // permite actualización inline
         tdC.textContent = esAHT
             ? (colAhtN[di] ? Math.round(colAhtSum[di] / colAhtN[di]) + ' s' : '—')
             : (colTotalsL[di] ? fmtNum(colTotalsL[di]) : '—');
         trTot.appendChild(tdC);
     }
     var tdGrand = document.createElement('td');
+    tdGrand.id = 'pvTotGrand';
     tdGrand.style.cssText = 'font-size:12px;text-align:right;padding:4px 6px;';
     tdGrand.textContent = esAHT
         ? (grandAhtN ? Math.round(grandAhtSum / grandAhtN) + ' s' : '—')
