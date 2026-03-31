@@ -63,6 +63,21 @@ function renderModuloPrevision(container) {
     }
 }
 
+/**
+ * Elimina los listeners globales del módulo Previsión.
+ * Llamado por ui.js al abandonar el panel.
+ */
+function desactivarModuloPrevision() {
+    if (_fPasteRegistrado) {
+        document.removeEventListener('paste', _fOnPaste);
+        _fPasteRegistrado = false;
+    }
+    if (_pvChartInstance) {
+        _pvChartInstance.destroy();
+        _pvChartInstance = null;
+    }
+}
+
 // ══════════════════════════════════════════════════════════════════════════
 //  TOOLBAR
 // ══════════════════════════════════════════════════════════════════════════
@@ -128,7 +143,9 @@ function _pvRenderToolbar() {
     btnModo.title = 'Alternar entre vista de llamadas y vista de AHT';
     btnModo.addEventListener('click', function() {
         _pvModo = _pvModo === 'llamadas' ? 'aht' : 'llamadas';
-        _pvRefrescar();
+        var el = document.getElementById('pvBtnModo');
+        if (el) el.innerHTML = _pvModo === 'llamadas' ? '⏱ Ver AHT' : '📞 Ver llamadas';
+        _pvRefrescarParcial();
     });
 
     // Separador + contador
@@ -148,7 +165,9 @@ function _pvRenderToolbar() {
     btnVista.title = 'Alternar entre vista semanal y vista mensual';
     btnVista.addEventListener('click', function() {
         _pvVista = _pvVista === 'mes' ? 'semana' : 'mes';
-        _pvRefrescar();
+        var el = document.getElementById('pvBtnVista');
+        if (el) el.innerHTML = _pvVista === 'mes' ? '📅 Semana' : '📅 Mes';
+        _pvRefrescarParcial();
     });
 
     // Botón vista gráfica
@@ -159,7 +178,9 @@ function _pvRenderToolbar() {
     btnGrafico.title = 'Alternar entre vista tabla y vista gráfica combinada (llamadas + AHT)';
     btnGrafico.addEventListener('click', function() {
         _pvVistaGrafico = !_pvVistaGrafico;
-        _pvRefrescar();
+        var el = document.getElementById('pvBtnGrafico');
+        if (el) el.innerHTML = _pvVistaGrafico ? '📋 Tabla' : '📊 Gráfico';
+        _pvRefrescarParcial();
     });
 
     // Selector granularidad
@@ -912,7 +933,7 @@ function _pvPopoverMasivo(anchorEl, titulo, opts) {
         programarGuardado();
         toast('✅ ' + count + ' celda' + (count !== 1 ? 's' : '') + ' actualizadas', 'success');
         cerrar();
-        _pvRefrescar();
+        _pvRefrescarParcial();
     }
 
     btnX.addEventListener('click',   cerrar);
@@ -1531,9 +1552,13 @@ function _pvCargarExcel(file) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-//  REFRESCO COMPLETO
+//  REFRESCO
 // ══════════════════════════════════════════════════════════════════════════
 
+/**
+ * Refresco COMPLETO: reconstruye toolbar + stats + tabla.
+ * Usar cuando cambian franjas, modo, vista, o datos completos.
+ */
 function _pvRefrescar() {
     if (!_pvContainer) return;
     // Sincronizar estado compartido con forecast.js
@@ -1541,4 +1566,30 @@ function _pvRefrescar() {
     _fSemanaOffset   = _pvSemanaOffset;
     _fContainer      = _pvContainer;
     renderModuloPrevision(_pvContainer);
+}
+
+/**
+ * Refresco PARCIAL: actualiza stats y tabla sin reconstruir el toolbar.
+ * Usar después de ediciones de celdas donde la estructura no ha cambiado
+ * (mismas franjas, mismo modo, mismo período). Preserva el scroll de la página.
+ */
+function _pvRefrescarParcial() {
+    if (!_pvContainer) return;
+    _fServicioActivo = _pvServicioActivo;
+    _fSemanaOffset   = _pvSemanaOffset;
+
+    // 1. Actualizar contador del toolbar
+    _pvActualizarInfo();
+
+    // 2. Actualizar tarjetas de stats
+    _pvActualizarStats();
+
+    // 3. Re-renderizar solo el panel de tabla (nav + tabla + banner)
+    var wrap = document.getElementById('pvTablaPanel');
+    if (wrap) {
+        _pvRenderTablaPanelInner(wrap);
+    } else {
+        // pvTablaPanel no encontrado en el DOM: caer al refresco completo
+        renderModuloPrevision(_pvContainer);
+    }
 }

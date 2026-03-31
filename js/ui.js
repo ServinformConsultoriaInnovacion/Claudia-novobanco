@@ -166,6 +166,10 @@ function toggleSidebar() {
 // ══════════════════════════════════════════════════════════════════════════
 
 function mostrarPanel(panelId) {
+    // Desactivar listeners del panel saliente antes de cambiar
+    if (_panelActivo === 'panelStaff')    desactivarModuloStaff();
+    if (_panelActivo === 'panelPrevision') desactivarModuloPrevision();
+
     _panelActivo = panelId;
     _actualizarNav();
 

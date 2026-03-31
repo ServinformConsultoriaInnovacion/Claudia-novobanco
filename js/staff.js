@@ -102,6 +102,36 @@ var _stHistorial       = [];       // undo stack para Ctrl+Z
 var _stPasteRegistrado = false;
 var _stKeyRegistrado   = false;
 
+// Handler nombrado para poder hacer removeEventListener
+function _stOnKeydown(e) {
+    if (!document.getElementById('stTabla')) return;
+    if (e.ctrlKey && (e.key === 'c' || e.key === 'C') && _stSelRango) {
+        e.preventDefault();
+        _stCopiarRango();
+    }
+    if (e.ctrlKey && (e.key === 'z' || e.key === 'Z')) {
+        _stUndo();
+        e.preventDefault();
+    }
+}
+
+/**
+ * Elimina los listeners globales del módulo Staff.
+ * Llamado por ui.js al abandonar el panel.
+ */
+function desactivarModuloStaff() {
+    if (_stPasteRegistrado) {
+        document.removeEventListener('paste',   _stOnPaste);
+        _stPasteRegistrado = false;
+    }
+    if (_stKeyRegistrado) {
+        document.removeEventListener('keydown', _stOnKeydown);
+        _stKeyRegistrado = false;
+    }
+    _stSelOrigen = null;
+    _stSelRango  = null;
+}
+
 // ── Entry point ───────────────────────────────────────────────────────────
 
 /**
@@ -143,18 +173,7 @@ function renderModuloStaff(container) {
         _stPasteRegistrado = true;
     }
     if (!_stKeyRegistrado) {
-        document.addEventListener('keydown', function(e) {
-            var enTabla = !!document.getElementById('stTabla');
-            if (!enTabla) return;
-            if (e.ctrlKey && (e.key === 'c' || e.key === 'C') && _stSelRango) {
-                e.preventDefault();
-                _stCopiarRango();
-            }
-            if (e.ctrlKey && (e.key === 'z' || e.key === 'Z')) {
-                _stUndo();
-                e.preventDefault();
-            }
-        });
+        document.addEventListener('keydown', _stOnKeydown);
         _stKeyRegistrado = true;
     }
     // (activos ya recalculados antes de _stActualizar arriba)
