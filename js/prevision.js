@@ -258,8 +258,14 @@ function _pvRenderToolbar() {
     btnEjemplo.title = 'Descargar Excel de ejemplo (año actual, 3 formatos de franja: 15min / 30min / 1h)';
     btnEjemplo.addEventListener('click', _pvDescargarEjemplo);
 
+    var btnGuardar = document.createElement('button');
+    btnGuardar.className = 'st-toolbar-btn btn btn-secondary btn-sm';
+    btnGuardar.innerHTML = '💾 Guardar Excel';
+    btnGuardar.title = 'Exportar previsión actual (y staff si existe) a un Excel recargable';
+    btnGuardar.addEventListener('click', _pvDescargarDatos);
+
     // 1-semana/mes · 2-ver AHT/llamadas · 3-horario · 4-granularidad
-    // 5-gráfico · 6-sherpa · 7-carga excel · 8-demo · 9-ejemplo · 10-limpiar
+    // 5-gráfico · 6-sherpa · 7-carga excel · 8-guardar · 9-demo · 10-ejemplo · 11-limpiar
     tb.appendChild(btnVista);
     tb.appendChild(btnModo);
     tb.appendChild(lblHorario);
@@ -270,6 +276,7 @@ function _pvRenderToolbar() {
     tb.appendChild(btnGrafico);
     tb.appendChild(btnSherpa);
     tb.appendChild(zona);
+    tb.appendChild(btnGuardar);
     tb.appendChild(btnDemo);
     tb.appendChild(btnEjemplo);
     tb.appendChild(btnLimpiar);
@@ -1530,6 +1537,113 @@ function _pvDescargarEjemplo() {
     var anyo = new Date().getFullYear();
     saveAs(new Blob([buf], { type: 'application/octet-stream' }), 'prevision_ejemplo_' + anyo + '.xlsx');
     toast('Excel de ejemplo descargado (año ' + anyo + ' · 15min / 30min / 1h)', 'success');
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  DESCARGA DE DATOS
+// ══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Exporta previsión actual (+ staff si existe) a un Excel recargable.
+ *
+ * Hojas generadas:
+ *   "Previsión" — formato LONG: Fecha | Franja | Servicio | Llamadas | AHT
+ *   "STAFF"     — (opcional) idéntica a la que exporta descargarDatosStaff()
+ *
+ * El parser reconoce "Previsión" → _parseLong → round-trip exacto.
+ * El parser reconoce "STAFF"     → _parsearSTAFF → round-trip exacto.
+ */
+function _pvDescargarDatos() {
+    var llamadas = State.forecast.llamadas;
+    var aht      = State.forecast.aht;
+    var n = Object.keys(llamadas).length;
+    if (!n) {
+        toast('No hay datos de previsión que exportar.', 'warning');
+        return;
+    }
+
+    // Construir mapa id→nombre de servicios
+    var svcNombre = {};
+    State.config.servicios.forEach(function(s) { svcNombre[s.id] = s.nombre; });
+
+    // ── Hoja Previsión (LONG) ─────────────────────────────────────────
+    var rows = [['Fecha', 'Franja', 'Servicio', 'Llamadas', 'AHT']];
+    var fechas = Object.keys(llamadas).sort();
+    fechas.forEach(function(fecha) {
+        var dLlam = llamadas[fecha] || {};
+        var franjas = Object.keys(dLlam).sort();
+        franjas.forEach(function(franja) {
+            var fLlam = dLlam[franja] || {};
+            // Unión de servicios en llamadas + aht para esta celda
+            var svcIds = {};
+            Object.keys(fLlam).forEach(function(id) { svcIds[id] = true; });
+            var dAht = (aht[fecha] && aht[fecha][franja]) ? aht[fecha][franja] : {};
+            Object.keys(dAht).forEach(function(id) { svcIds[id] = true; });
+            Object.keys(svcIds).forEach(function(svcId) {
+                var llam = (fLlam[svcId] !== undefined) ? fLlam[svcId] : 0;
+                var ahtV = (dAht[svcId] !== undefined) ? dAht[svcId] : 0;
+                if (llam === 0 && ahtV === 0) return; // no emitir filas vacías
+                var nombre = svcNombre[svcId] || String(svcId);
+                rows.push([fecha, franja, nombre, llam, ahtV]);
+            });
+        });
+    });
+
+    var wbData = XLSX.utils.book_new();
+    var wsPrev = XLSX.utils.aoa_to_sheet(rows);
+    wsPrev['!cols'] = [
+        { wch: 12 }, { wch: 8 }, { wch: 20 }, { wch: 10 }, { wch: 8 }
+    ];
+    XLSX.utils.book_append_sheet(wbData, wsPrev, 'Previsión');
+
+    // ── Hoja STAFF (si existe) ────────────────────────────────────────
+    if (State.staff.todos.length) {
+        var HEADER_ST = [
+            'CODIGO PRODUCTOR', 'SERVICIO', 'SEDE', 'HORAS', 'TIPO TURNO',
+            'INICIO TURNO', 'FIN DE TURNO',
+            'INICIO TURNO 2', 'FIN TURNO 2',
+            'INICIO TURNO 3', 'FIN TURNO 3',
+            'INICIO TURNO 4', 'FIN TURNO 4',
+            'HORARIO PARTIDO', 'DISPONIBILIDAD', 'ESTADO', 'FIN AUSENCIA',
+            'INICIO VAC 1', 'FIN VAC 1', 'INICIO VAC 2', 'FIN VAC 2',
+            'INICIO VAC 3', 'FIN VAC 3', 'INICIO VAC 4', 'FIN VAC 4',
+            'DLF 1', 'DLF 2', 'DLF 3', 'DLF 4', 'DLF 5', 'DLF 6',
+            'FESTIVO 1', 'FESTIVO 2', 'FESTIVO 3', 'FESTIVO 4', 'FESTIVO 5', 'FESTIVO 6'
+        ];
+        var rowsSt = [HEADER_ST];
+        State.staff.todos.forEach(function(a) {
+            rowsSt.push([
+                a.codigo         || '', a.servicio       || '', a.sede           || '',
+                a.horas          || '', a.tipoTurno      || '',
+                a.inicioTurno    || '', a.finTurno       || '',
+                a.inicioTurno2   || '', a.finTurno2      || '',
+                a.inicioTurno3   || '', a.finTurno3      || '',
+                a.inicioTurno4   || '', a.finTurno4      || '',
+                a.horarioPartido || '', a.disponibilidad || '', a.estado || '', a.finAusencia || '',
+                a.inicioVac1 || '', a.finVac1 || '', a.inicioVac2 || '', a.finVac2 || '',
+                a.inicioVac3 || '', a.finVac3 || '', a.inicioVac4 || '', a.finVac4 || '',
+                a.dlf1  || '', a.dlf2  || '', a.dlf3  || '',
+                a.dlf4  || '', a.dlf5  || '', a.dlf6  || '',
+                a.fest1 || '', a.fest2 || '', a.fest3 || '',
+                a.fest4 || '', a.fest5 || '', a.fest6 || ''
+            ]);
+        });
+        var wsSt = XLSX.utils.aoa_to_sheet(rowsSt);
+        wsSt['!cols'] = HEADER_ST.map(function(h) { return { wch: Math.max(h.length, 12) }; });
+        XLSX.utils.book_append_sheet(wbData, wsSt, 'STAFF');
+    }
+
+    var hoy = new Date();
+    var fechaNombre = hoy.getFullYear() + '-' +
+        String(hoy.getMonth() + 1).padStart(2, '0') + '-' +
+        String(hoy.getDate()).padStart(2, '0');
+    var buf = XLSX.write(wbData, { bookType: 'xlsx', type: 'array' });
+    saveAs(new Blob([buf], { type: 'application/octet-stream' }),
+        'prevision_claudia_novobanco_' + fechaNombre + '.xlsx');
+
+    var msg = '✅ ' + (rows.length - 1) + ' registros exportados';
+    if (State.staff.todos.length) msg += ' + ' + State.staff.todos.length + ' agentes';
+    toast(msg, 'success');
 }
 
 // ══════════════════════════════════════════════════════════════════════════

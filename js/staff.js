@@ -219,6 +219,12 @@ function _stRenderToolbar() {
     btnPlantilla.innerHTML = '📥 Plantilla vacía';
     btnPlantilla.addEventListener('click', descargarPlantillaStaff);
 
+    var btnGuardar = document.createElement('button');
+    btnGuardar.className = 'btn btn-secondary btn-sm st-toolbar-btn';
+    btnGuardar.title     = 'Descarga los agentes actuales en formato Excel rellenable y con carga exacta';
+    btnGuardar.innerHTML = '💾 Guardar Excel';
+    btnGuardar.addEventListener('click', descargarDatosStaff);
+
     var btnDemo = document.createElement('button');
     btnDemo.className = 'btn btn-secondary btn-sm st-toolbar-btn';
     btnDemo.title     = 'Genera 5 agentes de prueba por servicio (máx. 20) para explorar la herramienta';
@@ -231,6 +237,7 @@ function _stRenderToolbar() {
 
     bar.appendChild(lbl);
     bar.appendChild(btnPlantilla);
+    bar.appendChild(btnGuardar);
     bar.appendChild(btnDemo);
     bar.appendChild(banner);
 
@@ -1063,7 +1070,78 @@ function _stOnPaste(e) {
     _stSelOrigen = null;
 }
 
-// ── Descarga plantilla Excel ───────────────────────────────────────────────
+// ── Descarga datos + plantilla Excel ─────────────────────────────────────
+
+/**
+ * Descarga el staff actual como Excel compatible con la carga.
+ * Formato: hoja "STAFF" con columnas exactas que _parsearSTAFF reconoce.
+ * Round-trip perfecto con _stCargarExcel.
+ */
+function descargarDatosStaff() {
+    if (!State.staff.todos.length) {
+        toast('No hay agentes que exportar.', 'warning');
+        return;
+    }
+
+    var HEADER = [
+        'CODIGO PRODUCTOR', 'SERVICIO', 'SEDE', 'HORAS', 'TIPO TURNO',
+        'INICIO TURNO', 'FIN DE TURNO',
+        'INICIO TURNO 2', 'FIN TURNO 2',
+        'INICIO TURNO 3', 'FIN TURNO 3',
+        'INICIO TURNO 4', 'FIN TURNO 4',
+        'HORARIO PARTIDO', 'DISPONIBILIDAD', 'ESTADO', 'FIN AUSENCIA',
+        'INICIO VAC 1', 'FIN VAC 1', 'INICIO VAC 2', 'FIN VAC 2',
+        'INICIO VAC 3', 'FIN VAC 3', 'INICIO VAC 4', 'FIN VAC 4',
+        'DLF 1', 'DLF 2', 'DLF 3', 'DLF 4', 'DLF 5', 'DLF 6',
+        'FESTIVO 1', 'FESTIVO 2', 'FESTIVO 3', 'FESTIVO 4', 'FESTIVO 5', 'FESTIVO 6'
+    ];
+
+    var rows = [HEADER];
+    State.staff.todos.forEach(function(a) {
+        rows.push([
+            a.codigo         || '',
+            a.servicio       || '',
+            a.sede           || '',
+            a.horas          || '',
+            a.tipoTurno      || '',
+            a.inicioTurno    || '',
+            a.finTurno       || '',
+            a.inicioTurno2   || '',
+            a.finTurno2      || '',
+            a.inicioTurno3   || '',
+            a.finTurno3      || '',
+            a.inicioTurno4   || '',
+            a.finTurno4      || '',
+            a.horarioPartido || '',
+            a.disponibilidad || '',
+            a.estado         || '',
+            a.finAusencia    || '',
+            a.inicioVac1     || '', a.finVac1 || '',
+            a.inicioVac2     || '', a.finVac2 || '',
+            a.inicioVac3     || '', a.finVac3 || '',
+            a.inicioVac4     || '', a.finVac4 || '',
+            a.dlf1  || '', a.dlf2  || '', a.dlf3  || '',
+            a.dlf4  || '', a.dlf5  || '', a.dlf6  || '',
+            a.fest1 || '', a.fest2 || '', a.fest3 || '',
+            a.fest4 || '', a.fest5 || '', a.fest6 || ''
+        ]);
+    });
+
+    var ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = HEADER.map(function(h) { return { wch: Math.max(h.length, 12) }; });
+
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'STAFF');
+
+    var hoy = new Date();
+    var fecha = hoy.getFullYear() + '-' +
+        String(hoy.getMonth() + 1).padStart(2, '0') + '-' +
+        String(hoy.getDate()).padStart(2, '0');
+    var buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    saveAs(new Blob([buf], { type: 'application/octet-stream' }),
+        'staff_claudia_novobanco_' + fecha + '.xlsx');
+    toast('✅ ' + State.staff.todos.length + ' agentes exportados', 'success');
+}
 
 /**
  * Descarga la plantilla STAFF usando ExcelJS para formateo completo:
