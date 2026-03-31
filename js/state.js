@@ -32,10 +32,11 @@ const State = {
         pausa68:        { valor: 20,    noAplica: false },
         vacaciones:     { valor: 23,    noAplica: false },
         pvdShrinkage:   { valor: 16.7,  noAplica: false },
-        camposLibres:   [     // [{ nombre, valor, noAplica, rol }]
+        camposLibres:   [     // [{ nombre, valor, noAplica, rol }] — LEGACY (ver reglasExcepcion)
             // rol: 'info' | 'shrinkage' | 'reduccion_jornada' | 'ocupacion_max'
             { nombre: 'Rotación FDS por defecto', valor: 33, noAplica: true, rol: 'info' }
-        ]
+        ],
+        reglasExcepcion: []   // [crearReglaExcepcion()] — motor de reglas por segmento de staff
     },
 
     // ── A3. Perfiles de configuración guardados ───────────────────────────
@@ -121,6 +122,123 @@ function crearServicio(nombre) {
     };
 }
 
+// ── Factory de reglas de excepción ──────────────────────────────────────────
+
+/**
+ * Devuelve una regla de excepción nueva con todos los campos en su valor por defecto.
+ * @param {string} [nombre]
+ * @returns {object}
+ */
+function crearReglaExcepcion(nombre) {
+    return {
+        id:            'reg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        nombre:        nombre || 'Nueva regla',
+        activa:        true,
+        prioridad:     10,
+        vigencia:      { desde: null, hasta: null },
+        modoConflicto: 'sustituir',   // 'sustituir' | 'sumar' | 'mas_restrictivo'
+        notas:         '',
+
+        filtro: {
+            servicios:       [],
+            tiposTurno:      [],   // 'manana'|'tarde'|'noche'|'fds'|'partido'|'guardia'
+            estados:         [],   // 'fijo'|'temporal'|'excedencia'|'reduccion_activa'
+            tiposContrato:   [],   // 'completo'|'parcial_75'|'parcial_50'
+            gruposPro:       [],   // 'teleoperador'|'especialista'|'supervisor'
+            sedes:           [],
+            antiguedadMin:   null,
+            antiguedadMax:   null,
+            franjas:         null  // null | { desde:'HH:MM', hasta:'HH:MM', dias:[0..6] }
+        },
+
+        parametros: {
+            // — Cálculo base —
+            shrinkage:           { activa: false, valor: null },
+            reduccionJornada:    { activa: false, valor: null },
+            ocupacionMax:        { activa: false, valor: null },
+            ahtOverride:         { activa: false, valor: null },
+            jornadaSemanal:      { activa: false, valor: null },
+            vacaciones:          { activa: false, valor: null },
+
+            // — Rotación y turnos —
+            rotacion: {
+                frecuencia:          { activa: false, valor: null },
+                patronFds:           { activa: false, valor: null },
+                fdsAlMes:            { activa: false, valor: null },
+                cambiosTurnoMes:     { activa: false, valor: null },
+                cambiosTurnoAnio:    { activa: false, valor: null },
+                descansoCambioTurno: { activa: false, valor: null },
+                maxNochesConsec:     { activa: false, valor: null },
+                nochesAlMes:         { activa: false, valor: null }
+            },
+
+            // — Carga especial —
+            carga: {
+                festivosObligAnio:   { activa: false, valor: null },
+                guardiasAlMes:       { activa: false, valor: null },
+                jornadaPartidaMes:   { activa: false, valor: null },
+                horasExtraMes:       { activa: false, valor: null },
+                horasExtraAnio:      { activa: false, valor: null },
+                bolsaHoras:          { activa: false, valor: null }
+            },
+
+            // — Teletrabajo —
+            teletrabajo: {
+                diasSemana:          { activa: false, valor: null },
+                diasMes:             { activa: false, valor: null }
+            },
+
+            // — Campos extra libres —
+            extras: []   // [{ nombre, valor, noAplica, rol }]
+        }
+    };
+}
+
+/**
+ * Asegura que una regla restaurada desde localStorage tenga todos los campos
+ * requeridos por la versión actual de crearReglaExcepcion().
+ * @param {object} regla
+ * @returns {object}
+ */
+function _normalizarRegla(regla) {
+    var defaults = crearReglaExcepcion('');
+    // Propiedades de primer nivel
+    ['nombre','activa','prioridad','vigencia','modoConflicto','notas'].forEach(function(k) {
+        if (regla[k] === undefined) regla[k] = defaults[k];
+    });
+    // Filtro
+    if (!regla.filtro) {
+        regla.filtro = defaults.filtro;
+    } else {
+        Object.keys(defaults.filtro).forEach(function(k) {
+            if (regla.filtro[k] === undefined) regla.filtro[k] = defaults.filtro[k];
+        });
+    }
+    // Parámetros base
+    if (!regla.parametros) {
+        regla.parametros = defaults.parametros;
+    } else {
+        ['shrinkage','reduccionJornada','ocupacionMax','ahtOverride','jornadaSemanal','vacaciones']
+            .forEach(function(k) {
+                if (!regla.parametros[k]) regla.parametros[k] = defaults.parametros[k];
+            });
+        // Sub-grupos
+        ['rotacion','carga','teletrabajo'].forEach(function(grupo) {
+            if (!regla.parametros[grupo]) {
+                regla.parametros[grupo] = defaults.parametros[grupo];
+            } else {
+                Object.keys(defaults.parametros[grupo]).forEach(function(k) {
+                    if (!regla.parametros[grupo][k]) {
+                        regla.parametros[grupo][k] = defaults.parametros[grupo][k];
+                    }
+                });
+            }
+        });
+        if (!Array.isArray(regla.parametros.extras)) regla.parametros.extras = [];
+    }
+    return regla;
+}
+
 // ── Persistencia localStorage ─────────────────────────────────────────────
 
 const LS_STATE_KEY    = 'nb_state_v1';
@@ -130,7 +248,7 @@ function guardarEstado() {
     try {
         const snapshot = {
             config:           State.config,
-            convenio:         State.convenio,
+            convenio:         State.convenio,   // incluye camposLibres y reglasExcepcion
             perfiles:         State.perfiles,
             staff:            { todos: State.staff.todos },
             forecast:         { llamadas: State.forecast.llamadas, aht: State.forecast.aht, editado: State.forecast.editado },
@@ -206,6 +324,12 @@ function restaurarEstado() {
             if (saved.forecast.llamadas) State.forecast.llamadas = saved.forecast.llamadas;
             if (saved.forecast.aht)      State.forecast.aht      = saved.forecast.aht;
             State.forecast.editado = !!saved.forecast.editado;
+        }
+        // Normalizar reglasExcepcion: rellenar campos nuevos en reglas guardadas
+        if (Array.isArray(State.convenio.reglasExcepcion)) {
+            State.convenio.reglasExcepcion = State.convenio.reglasExcepcion.map(_normalizarRegla);
+        } else {
+            State.convenio.reglasExcepcion = [];
         }
         // Añadir campos libres predefinidos que falten (migración no destructiva)
         _sembrarCamposLibresDefecto();
