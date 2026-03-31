@@ -141,10 +141,12 @@ function parsearExcel(file) {
 
 function _procesarWorkbook(wb) {
     var result = { nAgentes: 0, nRegistros: 0, hojas: [] };
+
+    // Mapa normalizado → nombre real de hoja
     var sheets = {};
     wb.SheetNames.forEach(function(name) { sheets[_norm(name)] = name; });
 
-    // STAFF
+    // ── STAFF ─────────────────────────────────────────────────────────
     var staffKey = sheets['staff'] || sheets['plantilla'] || sheets['agentes'];
     if (staffKey) {
         var staffRows = XLSX.utils.sheet_to_json(wb.Sheets[staffKey], { header: 1, defval: '' });
@@ -152,35 +154,97 @@ function _procesarWorkbook(wb) {
         result.hojas.push('STAFF — ' + result.nAgentes + ' agentes');
     }
 
-    // PREVISIÓN — hoja llamadas (formato normal o transpuesto, incluye Llamadas_30min etc.)
-    var prevKey = sheets['prevision'] || sheets['forecast'] || sheets['previsión'] ||
-        // Hojas del formato transpuesto: Llamadas_30min tiene prioridad sobre AHT_30min
-        Object.keys(sheets).find(function(k) { return /^llamadas/.test(k); }) ||
-        sheets['llamadas'];
-    if (prevKey) {
-        var prevRows = XLSX.utils.sheet_to_json(wb.Sheets[prevKey], { header: 1, defval: '' });
-        result.nRegistros = _parsearPrevision(prevRows);
-        result.hojas.push('Previsión — ' + result.nRegistros + ' registros');
+    // ── PREVISIÓN: detectar formato ───────────────────────────────────
+    //
+    // Prioridad A (nuevo formato tabla, una hoja por servicio):
+    //   "Llamadas_NombreSvc" + "AHT_NombreSvc"
+    //   → _parsearHojasTabla()
+    //
+    // Prioridad B (formato clásico):
+    //   "Previsión" / "Forecast" / hoja única llamadas + hoja AHT separada
+    //   → _parsearPrevision() + _parsearAHTSheet()
+
+    // Recoger todas las hojas que empiezan por "llamadas_" y "aht_"
+    var llamadasHojas = [];   // { normKey, realKey, sufijo }
+    var ahtHojas      = [];
+    Object.keys(sheets).forEach(function(nk) {
+        var mL = nk.match(/^llamadas_(.+)$/);
+        var mA = nk.match(/^aht_(.+)$/);
+        if (mL) llamadasHojas.push({ normKey: nk, realKey: sheets[nk], sufijo: mL[1] });
+        if (mA) ahtHojas.push(     { normKey: nk, realKey: sheets[nk], sufijo: mA[1] });
+    });
+
+    // Determinar si es formato tabla (nuevo): al menos una hoja "Llamadas_*"
+    // cuyo sufijo NO es una granularidad simple ('30min','15min','1h')
+    var GRAN_SIMPLE = ['30min', '15min', '1h', '30_min', '15_min', '1_h'];
+    var esFormatoTabla = llamadasHojas.some(function(h) {
+        return GRAN_SIMPLE.indexOf(h.sufijo) < 0;
+    });
+
+    if (esFormatoTabla) {
+        // Formato nuevo: resetear y cargar todas las hojas por servicio
+        State.forecast.llamadas = {};
+        State.forecast.aht      = {};
+        State.forecast.editado  = false;
+        var totalReg = 0;
+
+        // Construir mapa sufijo_normalizado → svcId
+        // Resuelve por nombre de servicio; si no coincide usa el sufijo como id
+        var sufijosAHT = {};
+        ahtHojas.forEach(function(h) { sufijosAHT[h.sufijo] = h.realKey; });
+
+        llamadasHojas.forEach(function(h) {
+            if (GRAN_SIMPLE.indexOf(h.sufijo) >= 0) return; // ignorar hojas de ejemplo
+            var svcId  = _resolverSvcIdPorNombre(h.sufijo);
+            var rowsL  = XLSX.utils.sheet_to_json(wb.Sheets[h.realKey], { header: 1, defval: '' });
+            var nL = _parsearHojaTabla(rowsL, svcId, 'llamadas');
+            totalReg += nL;
+
+            // Hoja AHT emparejada (mismo sufijo)
+            var ahtRealKey = sufijosAHT[h.sufijo];
+            if (ahtRealKey) {
+                var rowsA = XLSX.utils.sheet_to_json(wb.Sheets[ahtRealKey], { header: 1, defval: '' });
+                _parsearHojaTabla(rowsA, svcId, 'aht');
+            }
+        });
+
+        if (totalReg) {
+            result.nRegistros = totalReg;
+            result.hojas.push('Previsión — ' + totalReg + ' registros (' +
+                llamadasHojas.filter(function(h) { return GRAN_SIMPLE.indexOf(h.sufijo) < 0; }).length +
+                ' servicio/s)');
+        }
+
+    } else {
+        // Formato clásico LONG / WIDE / transpuesto granularidad
+        var prevKey = sheets['prevision'] || sheets['forecast'] || sheets['prevision'] ||
+            (llamadasHojas.length ? llamadasHojas[0].realKey : null) ||
+            sheets['llamadas'];
+        if (prevKey) {
+            var prevRows = XLSX.utils.sheet_to_json(wb.Sheets[prevKey], { header: 1, defval: '' });
+            result.nRegistros = _parsearPrevision(prevRows);
+            result.hojas.push('Previsión — ' + result.nRegistros + ' registros');
+        }
+
+        // AHT en hoja separada
+        var ahtKey = null;
+        if (prevKey) {
+            var prevNorm   = _norm(prevKey);
+            var granSufijo = prevNorm.replace(/^llamadas_?/, '');
+            var candidato  = granSufijo ? (sheets['aht_' + granSufijo] || sheets['aht' + granSufijo]) : null;
+            ahtKey = candidato || sheets['aht'] || sheets['tmo'] ||
+                Object.keys(sheets).find(function(k) { return /^aht/.test(k); });
+        } else {
+            ahtKey = sheets['aht'] || sheets['tmo'];
+        }
+        if (ahtKey && ahtKey !== prevKey) {
+            var ahtRows = XLSX.utils.sheet_to_json(wb.Sheets[ahtKey], { header: 1, defval: '' });
+            var nAHT = _parsearAHTSheet(ahtRows);
+            if (nAHT) result.hojas.push('AHT — ' + nAHT + ' registros');
+        }
     }
 
-    // AHT en hoja separada (complementa llamadas, no resetea).
-    // Busca primero hoja con nombre que empiece por 'aht' y coincida en granularidad con la de llamadas.
-    var ahtKey = null;
-    if (prevKey) {
-        var prevNorm = _norm(prevKey);
-        var granSufijo = prevNorm.replace(/^llamadas_?/, '');  // '30min', '15min', '1h' o ''
-        var candidato  = granSufijo ? (sheets['aht_' + granSufijo] || sheets['aht' + granSufijo]) : null;
-        ahtKey = candidato || sheets['aht'] || sheets['tmo'] ||
-            Object.keys(sheets).find(function(k) { return /^aht/.test(k); });
-    } else {
-        ahtKey = sheets['aht'] || sheets['tmo'];
-    }
-    if (ahtKey && ahtKey !== prevKey) {
-        var ahtRows = XLSX.utils.sheet_to_json(wb.Sheets[ahtKey], { header: 1, defval: '' });
-        var nAHT = _parsearAHTSheet(ahtRows);
-        if (nAHT) result.hojas.push('AHT — ' + nAHT + ' registros');
-    }
-    // ÚLTIMO TURNO
+    // ── ÚLTIMO TURNO ──────────────────────────────────────────────────
     var utKey = sheets['ultimo_turno'] || sheets['ultimo turno'] || sheets['cierre'];
     if (utKey) {
         State.horariosPrevios = XLSX.utils.sheet_to_json(wb.Sheets[utKey]);
@@ -188,6 +252,67 @@ function _procesarWorkbook(wb) {
     }
 
     return result;
+}
+
+/**
+ * Resuelve el sufijo de nombre de hoja (normalizado) al svcId correcto.
+ * Busca primero por nombre normalizado en State.config.servicios;
+ * si no coincide devuelve el sufijo tal cual (para datos sin servicios configurados).
+ */
+function _resolverSvcIdPorNombre(sufijo) {
+    var normSufijo = sufijo; // ya viene normalizado por _norm()
+    var svc = State.config.servicios.find(function(s) {
+        return _norm(s.nombre) === normSufijo;
+    });
+    if (svc) return svc.id;
+    // Fallback: devolver el id del primer servicio con nombre que contenga el sufijo
+    svc = State.config.servicios.find(function(s) {
+        return _norm(s.nombre).replace(/[\s_]+/g, '_').indexOf(normSufijo) >= 0;
+    });
+    if (svc) return svc.id;
+    // Último recurso: primer servicio disponible
+    return State.config.servicios.length ? State.config.servicios[0].id : sufijo;
+}
+
+/**
+ * Parsea una hoja en formato tabla: fila-0 = ['Día', 'HH:MM', ...], filas 1+ = [fecha, v, v, ...]
+ * @param {Array[]}  rows    - Matriz de filas (de sheet_to_json header:1)
+ * @param {string}   svcId   - ID del servicio al que asignar los datos
+ * @param {'llamadas'|'aht'} tipo
+ * @returns {number} número de celdas con dato
+ */
+function _parsearHojaTabla(rows, svcId, tipo) {
+    if (!rows.length) return 0;
+    var headers = rows[0];
+    // Franjas = columnas 1..N
+    var franjas = headers.slice(1).map(function(h) {
+        return _toFranjaStr(h) || String(h).trim();
+    });
+    var dest = tipo === 'aht' ? State.forecast.aht : State.forecast.llamadas;
+    var n = 0;
+    for (var r = 1; r < rows.length; r++) {
+        var row   = rows[r];
+        if (!row || !row.length) continue;
+        var fecha = _toDateStr(row[0]);
+        if (!fecha) continue;
+        franjas.forEach(function(franja, fi) {
+            var raw = row[fi + 1];
+            if (raw === '' || raw === null || raw === undefined) return;
+            var val = parseFloat(raw);
+            if (isNaN(val) || val < 0) return;
+            if (!State.forecast.llamadas[fecha]) {
+                State.forecast.llamadas[fecha] = {};
+                State.forecast.aht[fecha]      = {};
+            }
+            if (!State.forecast.llamadas[fecha][franja]) {
+                State.forecast.llamadas[fecha][franja] = {};
+                State.forecast.aht[fecha][franja]      = {};
+            }
+            dest[fecha][franja][svcId] = val;
+            n++;
+        });
+    }
+    return n;
 }
 
 // ── Parser STAFF ──────────────────────────────────────────────────────────
