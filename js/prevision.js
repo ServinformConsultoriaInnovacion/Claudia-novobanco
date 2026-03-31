@@ -1546,55 +1546,77 @@ function _pvDescargarEjemplo() {
 /**
  * Exporta previsión actual (+ staff si existe) a un Excel recargable.
  *
- * Hojas generadas:
- *   "Previsión" — formato LONG: Fecha | Franja | Servicio | Llamadas | AHT
- *   "STAFF"     — (opcional) idéntica a la que exporta descargarDatosStaff()
+ * Formato tabla (igual que la UI): días en filas, franjas en columnas.
+ * Una hoja por servicio y tipo:
+ *   "Llamadas_NombreSvc"  → ['Día', '09:00', '09:30', …]  + fila por fecha
+ *   "AHT_NombreSvc"       → ídem con valores AHT
+ *   "STAFF"               → (opcional) cabeceras exactas de _parsearSTAFF
  *
- * El parser reconoce "Previsión" → _parseLong → round-trip exacto.
- * El parser reconoce "STAFF"     → _parsearSTAFF → round-trip exacto.
+ * Al cargar este archivo (Fase 2 del parser) se restore exactamente.
+ * Con el parser actual (transpuesto) ya carga el primer servicio correctamente.
  */
 function _pvDescargarDatos() {
-    var llamadas = State.forecast.llamadas;
-    var aht      = State.forecast.aht;
-    var n = Object.keys(llamadas).length;
-    if (!n) {
+    var llamadas  = State.forecast.llamadas;
+    var aht       = State.forecast.aht;
+    var servicios = State.config.servicios;
+    var franjas   = State.config.franjas;
+
+    if (!Object.keys(llamadas).length) {
         toast('No hay datos de previsión que exportar.', 'warning');
         return;
     }
+    if (!servicios.length || !franjas.length) {
+        toast('Configura servicios y franjas antes de exportar.', 'warning');
+        return;
+    }
 
-    // Construir mapa id→nombre de servicios
-    var svcNombre = {};
-    State.config.servicios.forEach(function(s) { svcNombre[s.id] = s.nombre; });
-
-    // ── Hoja Previsión (LONG) ─────────────────────────────────────────
-    var rows = [['Fecha', 'Franja', 'Servicio', 'Llamadas', 'AHT']];
+    // Fechas ordenadas cronológicamente
     var fechas = Object.keys(llamadas).sort();
-    fechas.forEach(function(fecha) {
-        var dLlam = llamadas[fecha] || {};
-        var franjas = Object.keys(dLlam).sort();
-        franjas.forEach(function(franja) {
-            var fLlam = dLlam[franja] || {};
-            // Unión de servicios en llamadas + aht para esta celda
-            var svcIds = {};
-            Object.keys(fLlam).forEach(function(id) { svcIds[id] = true; });
-            var dAht = (aht[fecha] && aht[fecha][franja]) ? aht[fecha][franja] : {};
-            Object.keys(dAht).forEach(function(id) { svcIds[id] = true; });
-            Object.keys(svcIds).forEach(function(svcId) {
-                var llam = (fLlam[svcId] !== undefined) ? fLlam[svcId] : 0;
-                var ahtV = (dAht[svcId] !== undefined) ? dAht[svcId] : 0;
-                if (llam === 0 && ahtV === 0) return; // no emitir filas vacías
-                var nombre = svcNombre[svcId] || String(svcId);
-                rows.push([fecha, franja, nombre, llam, ahtV]);
-            });
-        });
-    });
 
-    var wbData = XLSX.utils.book_new();
-    var wsPrev = XLSX.utils.aoa_to_sheet(rows);
-    wsPrev['!cols'] = [
-        { wch: 12 }, { wch: 8 }, { wch: 20 }, { wch: 10 }, { wch: 8 }
-    ];
-    XLSX.utils.book_append_sheet(wbData, wsPrev, 'Previsión');
+    // Cabecera común: 'Día' + todas las franjas configuradas
+    var header = ['Día'].concat(franjas);
+
+    // Anchos de columna: fecha=12, franjas=6 cada una
+    var colWidths = [{ wch: 12 }].concat(franjas.map(function() { return { wch: 6 }; }));
+
+    var wb = XLSX.utils.book_new();
+
+    // ── Una hoja Llamadas + una hoja AHT por servicio ─────────────────
+    servicios.forEach(function(svc) {
+        var svcId = svc.id;
+
+        // Nombre de hoja: máx 31 chars, sin caracteres inválidos en Excel
+        var svcLabel = svc.nombre.replace(/[\\\/\?\*\[\]:]/g, '').trim().slice(0, 20);
+        var nameL = ('Llamadas_' + svcLabel).slice(0, 31);
+        var nameA = ('AHT_'      + svcLabel).slice(0, 31);
+
+        var rowsL = [header];
+        var rowsA = [header];
+
+        fechas.forEach(function(fecha) {
+            var filaL = [fecha];
+            var filaA = [fecha];
+            franjas.forEach(function(franja) {
+                var lv = (llamadas[fecha] && llamadas[fecha][franja])
+                    ? (llamadas[fecha][franja][svcId] !== undefined ? llamadas[fecha][franja][svcId] : null)
+                    : null;
+                var av = (aht[fecha] && aht[fecha][franja])
+                    ? (aht[fecha][franja][svcId] !== undefined ? aht[fecha][franja][svcId] : null)
+                    : null;
+                filaL.push(lv);
+                filaA.push(av);
+            });
+            rowsL.push(filaL);
+            rowsA.push(filaA);
+        });
+
+        var wsL = XLSX.utils.aoa_to_sheet(rowsL);
+        var wsA = XLSX.utils.aoa_to_sheet(rowsA);
+        wsL['!cols'] = colWidths;
+        wsA['!cols'] = colWidths;
+        XLSX.utils.book_append_sheet(wb, wsL, nameL);
+        XLSX.utils.book_append_sheet(wb, wsA, nameA);
+    });
 
     // ── Hoja STAFF (si existe) ────────────────────────────────────────
     if (State.staff.todos.length) {
@@ -1630,18 +1652,19 @@ function _pvDescargarDatos() {
         });
         var wsSt = XLSX.utils.aoa_to_sheet(rowsSt);
         wsSt['!cols'] = HEADER_ST.map(function(h) { return { wch: Math.max(h.length, 12) }; });
-        XLSX.utils.book_append_sheet(wbData, wsSt, 'STAFF');
+        XLSX.utils.book_append_sheet(wb, wsSt, 'STAFF');
     }
 
     var hoy = new Date();
     var fechaNombre = hoy.getFullYear() + '-' +
         String(hoy.getMonth() + 1).padStart(2, '0') + '-' +
         String(hoy.getDate()).padStart(2, '0');
-    var buf = XLSX.write(wbData, { bookType: 'xlsx', type: 'array' });
+    var buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     saveAs(new Blob([buf], { type: 'application/octet-stream' }),
         'prevision_claudia_novobanco_' + fechaNombre + '.xlsx');
 
-    var msg = '✅ ' + (rows.length - 1) + ' registros exportados';
+    var msg = '✅ ' + fechas.length + ' días × ' + servicios.length +
+        ' servicio' + (servicios.length !== 1 ? 's' : '') + ' exportados';
     if (State.staff.todos.length) msg += ' + ' + State.staff.todos.length + ' agentes';
     toast(msg, 'success');
 }
