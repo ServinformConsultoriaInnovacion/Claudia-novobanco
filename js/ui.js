@@ -442,11 +442,25 @@ function _renderPanelA2() {
                     '<button class="btn btn-secondary btn-sm" onclick="UI_addCampoLibre()">➕ Añadir campo libre</button>' +
                 '</div>' +
             '</div>' +
+            '<hr class="divider">' +
+            '<div class="sub-panel sp-collapsed">' +
+                '<div class="sub-panel-header" onclick="toggleSubPanel(this)">' +
+                    '<h3>⚡ Reglas de excepción</h3>' +
+                    '<span class="sp-toggle">▼</span>' +
+                '</div>' +
+                '<div class="sp-body">' +
+                    '<div class="info-box" style="margin-bottom:12px;">💡 Define condiciones especiales por segmento de staff. ' +
+                        'Una regla sin filtros aplica globalmente (como los antiguos campos libres).</div>' +
+                    '<div id="listaReglasExcepcion" style="margin-bottom:10px;"></div>' +
+                    '<button class="btn btn-secondary btn-sm" onclick="UI_addReglaExcepcion()">⚡ Añadir regla</button>' +
+                '</div>' +
+            '</div>' +
         '</div>';
 
     setTimeout(function() {
         UI_renderGridConvenio();
         UI_renderCamposLibres();
+        UI_renderReglasExcepcion();
     }, 0);
 
     return panel;
@@ -594,6 +608,191 @@ function UI_presetConvenioES() {
 }
 
 function UI_resetConvenio() { UI_presetConvenioES(); }
+
+// ── A2: Reglas de excepción ───────────────────────────────────────────────
+
+/** Metadatos de los parámetros del grupo «Cálculo base» */
+var _REG_PARAM_BASE_META = [
+    { key: 'shrinkage',        label: 'Shrinkage adicional',  unidad: '%',    min: 0, max: 100,  step: 0.1 },
+    { key: 'reduccionJornada', label: 'Reducción de jornada', unidad: '%',    min: 0, max: 50,   step: 0.1 },
+    { key: 'ocupacionMax',     label: 'Ocupación máxima',     unidad: '%',    min: 1, max: 100,  step: 1   },
+    { key: 'ahtOverride',      label: 'AHT override',         unidad: 'seg',  min: 1, max: 9999, step: 1   },
+    { key: 'jornadaSemanal',   label: 'Jornada semanal',      unidad: 'h',    min: 1, max: 60,   step: 0.5 },
+    { key: 'vacaciones',       label: 'Vacaciones',           unidad: 'días', min: 0, max: 60,   step: 1   }
+];
+
+function UI_renderReglasExcepcion() {
+    var lista = document.getElementById('listaReglasExcepcion');
+    if (!lista) return;
+    lista.innerHTML = '';
+
+    if (!State.convenio.reglasExcepcion.length) {
+        lista.innerHTML = '<div style="font-size:12px;color:var(--nb-text-light);padding:4px 0;">' +
+            'No hay reglas definidas. Una regla sin filtros equivale a un campo libre global.</div>';
+        return;
+    }
+
+    State.convenio.reglasExcepcion.forEach(function(regla) {
+        lista.appendChild(_rRegla_crearTarjeta(regla));
+    });
+}
+
+function UI_addReglaExcepcion() {
+    State.convenio.reglasExcepcion.push(crearReglaExcepcion('Nueva regla'));
+    UI_renderReglasExcepcion();
+    programarGuardado();
+    toast('Regla añadida', 'success');
+}
+
+function UI_eliminarReglaExcepcion(reglaId) {
+    State.convenio.reglasExcepcion = State.convenio.reglasExcepcion.filter(function(r) {
+        return r.id !== reglaId;
+    });
+    UI_renderReglasExcepcion();
+    programarGuardado();
+}
+
+function _rRegla_crearTarjeta(regla) {
+    var card = document.createElement('div');
+    card.style.cssText = 'border:1px solid var(--nb-border);border-radius:6px;margin-bottom:8px;' +
+        'overflow:hidden;transition:opacity 0.2s;' + (regla.activa ? '' : 'opacity:0.5;');
+
+    // ── Header ────────────────────────────────────────────────────────────
+    var hdr = document.createElement('div');
+    hdr.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 10px;' +
+        'background:var(--nb-grey-bg);cursor:pointer;user-select:none;';
+
+    // Botón activa (toggle ●/○)
+    var btnActiva = document.createElement('button');
+    btnActiva.textContent = regla.activa ? '●' : '○';
+    btnActiva.title = regla.activa ? 'Activa — clic para desactivar' : 'Inactiva — clic para activar';
+    btnActiva.style.cssText = 'font-size:15px;line-height:1;background:none;border:none;cursor:pointer;' +
+        'padding:0;flex-shrink:0;color:' + (regla.activa ? 'var(--nb-primary)' : 'var(--nb-text-light)') + ';';
+    btnActiva.addEventListener('click', function(e) {
+        e.stopPropagation();
+        regla.activa = !regla.activa;
+        card.style.opacity      = regla.activa ? '' : '0.5';
+        btnActiva.textContent   = regla.activa ? '●' : '○';
+        btnActiva.style.color   = regla.activa ? 'var(--nb-primary)' : 'var(--nb-text-light)';
+        btnActiva.title         = regla.activa ? 'Activa — clic para desactivar' : 'Inactiva — clic para activar';
+        programarGuardado();
+    });
+
+    // Nombre editable inline
+    var inpNombre = document.createElement('input');
+    inpNombre.type        = 'text';
+    inpNombre.value       = regla.nombre;
+    inpNombre.placeholder = 'Nombre de la regla';
+    inpNombre.style.cssText = 'flex:1;padding:3px 7px;border:1px solid transparent;border-radius:4px;' +
+        'font-size:13px;font-weight:600;font-family:inherit;background:transparent;color:var(--nb-text);';
+    inpNombre.addEventListener('focus', function() {
+        inpNombre.style.borderColor = 'var(--nb-primary)';
+        inpNombre.style.background  = '#fff';
+    });
+    inpNombre.addEventListener('blur', function() {
+        inpNombre.style.borderColor = 'transparent';
+        inpNombre.style.background  = 'transparent';
+    });
+    inpNombre.addEventListener('click',  function(e) { e.stopPropagation(); });
+    inpNombre.addEventListener('change', function() { regla.nombre = inpNombre.value; programarGuardado(); });
+
+    // Flecha acordeón
+    var arrow = document.createElement('span');
+    arrow.textContent = '▶';
+    arrow.style.cssText = 'font-size:10px;color:var(--nb-text-light);transition:transform 0.2s;flex-shrink:0;';
+
+    // Botón eliminar
+    var btnDel = document.createElement('button');
+    btnDel.textContent = '🗑';
+    btnDel.title = 'Eliminar regla';
+    btnDel.style.cssText = 'background:none;border:none;cursor:pointer;font-size:13px;padding:2px;flex-shrink:0;';
+    btnDel.addEventListener('click', function(e) {
+        e.stopPropagation();
+        UI_eliminarReglaExcepcion(regla.id);
+    });
+
+    hdr.appendChild(btnActiva);
+    hdr.appendChild(inpNombre);
+    hdr.appendChild(arrow);
+    hdr.appendChild(btnDel);
+
+    // ── Body (acordeón, colapsado por defecto) ────────────────────────────
+    var body = document.createElement('div');
+    body.style.cssText = 'padding:12px 14px;border-top:1px solid var(--nb-border);display:none;';
+
+    var titBase = document.createElement('div');
+    titBase.textContent = 'Cálculo base';
+    titBase.style.cssText = 'font-size:10px;font-weight:700;color:var(--nb-text-light);' +
+        'text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px;';
+    body.appendChild(titBase);
+
+    _REG_PARAM_BASE_META.forEach(function(meta) {
+        body.appendChild(_rRegla_filaParam(regla, meta));
+    });
+
+    // Toggle acordeón en el header de la tarjeta
+    var bodyVisible = false;
+    hdr.addEventListener('click', function() {
+        bodyVisible = !bodyVisible;
+        body.style.display    = bodyVisible ? '' : 'none';
+        arrow.style.transform = bodyVisible ? 'rotate(90deg)' : '';
+    });
+
+    card.appendChild(hdr);
+    card.appendChild(body);
+    return card;
+}
+
+function _rRegla_filaParam(regla, meta) {
+    var param = regla.parametros[meta.key];
+
+    var fila = document.createElement('div');
+    fila.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:7px;';
+
+    var chk = document.createElement('input');
+    chk.type    = 'checkbox';
+    chk.checked = !!param.activa;
+    chk.style.cssText = 'width:14px;height:14px;cursor:pointer;accent-color:var(--nb-primary);flex-shrink:0;';
+
+    var lbl = document.createElement('span');
+    lbl.textContent = meta.label;
+    lbl.style.cssText = 'flex:1;font-size:12px;color:' +
+        (param.activa ? 'var(--nb-text)' : 'var(--nb-text-light)') + ';';
+
+    var inp = document.createElement('input');
+    inp.type        = 'number';
+    inp.value       = param.valor !== null ? param.valor : '';
+    inp.placeholder = '–';
+    inp.min         = meta.min;
+    inp.max         = meta.max;
+    inp.step        = meta.step;
+    inp.disabled    = !param.activa;
+    inp.style.cssText = 'width:76px;padding:4px 6px;border:1px solid var(--nb-border);border-radius:4px;' +
+        'font-size:12px;font-family:inherit;text-align:right;transition:opacity 0.15s;' +
+        (param.activa ? '' : 'opacity:0.3;');
+
+    var uni = document.createElement('span');
+    uni.textContent = meta.unidad;
+    uni.style.cssText = 'font-size:11px;color:var(--nb-text-light);width:28px;flex-shrink:0;';
+
+    chk.addEventListener('change', function() {
+        param.activa      = chk.checked;
+        lbl.style.color   = param.activa ? 'var(--nb-text)' : 'var(--nb-text-light)';
+        inp.disabled      = !param.activa;
+        inp.style.opacity = param.activa ? '' : '0.3';
+        programarGuardado();
+    });
+    inp.addEventListener('change', function() {
+        param.valor = inp.value !== '' ? parseFloat(inp.value) : null;
+        programarGuardado();
+    });
+
+    fila.appendChild(chk);
+    fila.appendChild(lbl);
+    fila.appendChild(inp);
+    fila.appendChild(uni);
+    return fila;
+}
 
 // ── A3: Perfiles ──────────────────────────────────────────────────────────
 
