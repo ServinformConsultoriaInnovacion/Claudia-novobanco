@@ -800,20 +800,50 @@ function _rRegla_filaParam(regla, meta) {
 // ── A2: helpers filtros (Fase 3) ─────────────────────────────────────────
 
 var _TIPOS_TURNO_FILTRO = [
-    { value: 'manana',          label: 'Mañana'          },
-    { value: 'tarde',           label: 'Tarde'           },
-    { value: 'noche',           label: 'Noche'           },
-    { value: 'fds',             label: 'FDS'             },
-    { value: 'partido',         label: 'Partido'         },
-    { value: 'guardia',         label: 'Guardia'         }
+    { value: 'FIJO',              label: 'Fijo'              },
+    { value: 'FIJO MAÑANA',       label: 'Fijo Mañana'       },
+    { value: 'FIJO TARDE',        label: 'Fijo Tarde'        },
+    { value: 'FIJO NOCHE',        label: 'Fijo Noche'        },
+    { value: 'ROTATIVO',          label: 'Rotativo'          },
+    { value: 'ROTATIVO X 3',      label: 'Rotativo x3'       },
+    { value: 'ROTATIVO X 4',      label: 'Rotativo x4'       },
+    { value: 'PARTIDO',           label: 'Partido'           },
+    { value: 'PARTIDO IRR 31h',   label: 'Partido Irr 31h'  },
+    { value: 'IRR 25h',           label: 'Irr 25h'           },
+    { value: 'IRR 28h',           label: 'Irr 28h'           }
 ];
 
 var _ESTADOS_AGENTE_FILTRO = [
-    { value: 'fijo',            label: 'Fijo'            },
-    { value: 'temporal',        label: 'Temporal'        },
-    { value: 'excedencia',      label: 'Excedencia'      },
-    { value: 'reduccion_activa',label: 'Reducción activa' }
+    { value: 'ACTIVO',   label: 'Activo'            },
+    { value: 'IT',       label: 'IT (baja)'         },
+    { value: 'MAT',      label: 'Maternidad'        },
+    { value: 'PAT',      label: 'Paternidad'        },
+    { value: 'LACT',     label: 'Lactancia'         },
+    { value: 'EXC',      label: 'Excedencia'        },
+    { value: 'PR',       label: 'Prácticas'         },
+    { value: 'P.DTO',    label: 'P. Dto'            }
 ];
+
+/**
+ * Extrae los valores únicos de un campo del staff cargado.
+ * Si no hay staff devuelve el fallback proporcionado.
+ * @param {string} campo   clave del objeto agente (p.ej. 'tipoTurno', 'estado', 'sede')
+ * @param {Array}  fallback lista [{value,label}] cuando State.staff.todos está vacío
+ * @returns {Array} [{value, label}]
+ */
+function _rRegla_opcionesDesdeStaff(campo, fallback) {
+    if (!State.staff.todos.length) return fallback;
+    var vistos = {};
+    var res = [];
+    State.staff.todos.forEach(function(a) {
+        var v = (a[campo] || '').trim();
+        if (v && !vistos[v]) {
+            vistos[v] = true;
+            res.push({ value: v, label: v });
+        }
+    });
+    return res.length ? res : fallback;
+}
 
 /**
  * Renderiza el bloque «A quién aplica» con los filtros estáticos
@@ -829,6 +859,16 @@ function _rRegla_seccionFiltros(regla) {
         'text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;';
     sec.appendChild(tit);
 
+    var sinStaff = !State.staff.todos.length;
+
+    if (sinStaff) {
+        var aviso = document.createElement('div');
+        aviso.style.cssText = 'font-size:11px;color:var(--nb-text-light);font-style:italic;' +
+            'margin-bottom:10px;padding:6px 8px;background:var(--nb-grey-bg);border-radius:4px;';
+        aviso.textContent = '⚠️ Sin staff cargado. Carga un Excel con hoja STAFF para ver los valores reales.';
+        sec.appendChild(aviso);
+    }
+
     var defs = [
         {
             label:   'Servicio',
@@ -841,13 +881,24 @@ function _rRegla_seccionFiltros(regla) {
         },
         {
             label:   'Tipo de turno',
-            opciones: function() { return _TIPOS_TURNO_FILTRO; },
+            opciones: function() {
+                return _rRegla_opcionesDesdeStaff('tipoTurno', _TIPOS_TURNO_FILTRO);
+            },
             selArr: regla.filtro.tiposTurno
         },
         {
             label:   'Estado agente',
-            opciones: function() { return _ESTADOS_AGENTE_FILTRO; },
+            opciones: function() {
+                return _rRegla_opcionesDesdeStaff('estado', _ESTADOS_AGENTE_FILTRO);
+            },
             selArr: regla.filtro.estados
+        },
+        {
+            label:   'Sede',
+            opciones: function() {
+                return _rRegla_opcionesDesdeStaff('sede', []);
+            },
+            selArr: regla.filtro.sedes
         }
     ];
 
