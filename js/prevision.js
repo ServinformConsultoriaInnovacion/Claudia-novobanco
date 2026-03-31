@@ -228,18 +228,20 @@ function _pvRenderToolbar() {
     btnEjemplo.title = 'Descargar Excel de ejemplo (año 2026, 3 formatos de franja)';
     btnEjemplo.addEventListener('click', _pvDescargarEjemplo);
 
-    tb.appendChild(zona);
-    tb.appendChild(btnDemo);
-    tb.appendChild(btnLimpiar);
-    tb.appendChild(btnModo);
+    // 1-semana/mes · 2-ver AHT/llamadas · 3-horario · 4-granularidad
+    // 5-gráfico · 6-carga excel · 7-demo · 8-ejemplo · 9-limpiar
     tb.appendChild(btnVista);
-    tb.appendChild(btnGrafico);
-    tb.appendChild(selGran);
+    tb.appendChild(btnModo);
     tb.appendChild(lblHorario);
     tb.appendChild(selInicio);
     tb.appendChild(sepH);
     tb.appendChild(selFin);
+    tb.appendChild(selGran);
+    tb.appendChild(btnGrafico);
+    tb.appendChild(zona);
+    tb.appendChild(btnDemo);
     tb.appendChild(btnEjemplo);
+    tb.appendChild(btnLimpiar);
     tb.appendChild(sep);
     tb.appendChild(info);
     return tb;
@@ -553,12 +555,33 @@ function _pvCrearTablaMes(primerDia) {
     // ── Cabecera: esquina + una th por franja + Total ─────────────────
     var thead = document.createElement('thead');
     var trH   = document.createElement('tr');
-    trH.innerHTML = '<th class="f-th-corner" style="min-width:60px;">Día</th>';
+    var thCorner = document.createElement('th');
+    thCorner.className = 'f-th-corner';
+    thCorner.style.minWidth = '60px';
+    thCorner.textContent = 'Día';
+    trH.appendChild(thCorner);
     franjas.forEach(function(franja) {
-        trH.innerHTML += '<th class="f-th-day" style="min-width:44px;font-size:10px;font-weight:700;padding:4px 3px;">' +
-            franja + '</th>';
+        var th = document.createElement('th');
+        th.className = 'f-th-day';
+        th.style.cssText = 'min-width:44px;font-size:10px;font-weight:700;padding:4px 3px;cursor:pointer;';
+        th.title = 'Clic: editar ' + franja + ' en todos los días del mes';
+        th.textContent = franja;
+        th.addEventListener('click', function() {
+            _pvPopoverMasivo(th, '⏱ Franja ' + franja, {
+                modo: 'franja',
+                seleccionado: franja,
+                todosItems:   franjas,
+                otrosDim:     dias.map(function(d) { return _fecStr(d); }),
+                svcId: svcId
+            });
+        });
+        trH.appendChild(th);
     });
-    trH.innerHTML += '<th class="f-th-day" style="min-width:50px;">Total</th>';
+    var thTot = document.createElement('th');
+    thTot.className = 'f-th-day';
+    thTot.style.minWidth = '50px';
+    thTot.textContent = 'Total';
+    trH.appendChild(thTot);
     thead.appendChild(trH);
     table.appendChild(thead);
 
@@ -582,14 +605,24 @@ function _pvCrearTablaMes(primerDia) {
         var tr = document.createElement('tr');
         if (esFDS) tr.style.background = '#f0faf3';
 
-        // Celda día (sticky left)
+        // Celda día (sticky left) — clic abre popover para editar todo el día
         var tdDia = document.createElement('td');
         tdDia.className = 'f-td-franja';
-        tdDia.style.cssText = 'font-size:11px;white-space:nowrap;min-width:60px;' +
+        tdDia.style.cssText = 'font-size:11px;white-space:nowrap;min-width:60px;cursor:pointer;' +
             (esFDS ? 'color:#1a7a3a;font-weight:700;' : '');
+        tdDia.title = 'Clic: editar todas las franjas de este día';
         tdDia.innerHTML =
             '<span style="font-weight:700;">' + String(dia.getDate()).padStart(2,'0') + '</span>' +
             '<span style="margin-left:3px;' + (esFDS ? '' : 'color:var(--nb-text-light);') + '">' + DIAS_ES[dow] + '</span>';
+        tdDia.addEventListener('click', function() {
+            _pvPopoverMasivo(tdDia, '📅 ' + fechaStr, {
+                modo: 'dia',
+                seleccionado: fechaStr,
+                todosItems:   dias.map(function(d) { return _fecStr(d); }),
+                otrosDim:     franjas,
+                svcId: svcId
+            });
+        });
         tr.appendChild(tdDia);
 
         var rowTotal = 0;
@@ -672,6 +705,211 @@ function _pvCrearTablaMes(primerDia) {
     return table;
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+//  POPOVER EDICIÓN MASIVA
+// ══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Muestra un popover para edición masiva.
+ * @param {HTMLElement} anchorEl
+ * @param {string}      titulo
+ * @param {object}      opts
+ *   opts.modo        'franja' | 'dia'
+ *   opts.seleccionado  franja o fecha actualmente clickada (pre-checked)
+ *   opts.todosItems    array de todas las franjas o fechas disponibles
+ *   opts.otrosDim      dimensión cruzada: fechas (si modo=franja) o franjas (si modo=dia)
+ *   opts.svcId
+ */
+function _pvPopoverMasivo(anchorEl, titulo, opts) {
+    var prev = document.getElementById('pvPopoverMasivo');
+    if (prev) { prev.remove(); return; }
+
+    var svcId    = opts.svcId;
+    var modo     = opts.modo;    // 'franja' | 'dia'
+    var DIAS_ES  = {'0':'Do','1':'Lu','2':'Ma','3':'Mi','4':'Ju','5':'Vi','6':'Sá'};
+
+    // Determinar qué lista va en cada bloque
+    var franjaItems = (modo === 'franja' ? opts.todosItems : opts.otrosDim).slice().sort();
+    var diaItems    = (modo === 'franja' ? opts.otrosDim   : opts.todosItems).slice().sort();
+
+    function labelDia(fecha) {
+        var d = new Date(fecha + 'T00:00:00');
+        return String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') +
+            ' ' + DIAS_ES[String(d.getDay())];
+    }
+
+    var pop = document.createElement('div');
+    pop.id = 'pvPopoverMasivo';
+    pop.style.cssText = 'position:fixed;z-index:9999;background:var(--nb-white);' +
+        'border:1px solid var(--nb-primary);border-radius:8px;padding:12px 14px;' +
+        'box-shadow:0 4px 20px rgba(0,0,0,0.22);width:280px;font-size:12px;';
+
+    // ── Cabecera ──────────────────────────────────────────────────────
+    var hdr = document.createElement('div');
+    hdr.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;';
+    var tit = document.createElement('strong');
+    tit.style.fontSize = '12px';
+    tit.textContent = titulo;
+    var btnX = document.createElement('button');
+    btnX.style.cssText = 'background:none;border:none;cursor:pointer;font-size:18px;line-height:1;padding:0 2px;color:var(--nb-text-light);';
+    btnX.textContent = '×';
+    hdr.appendChild(tit); hdr.appendChild(btnX);
+    pop.appendChild(hdr);
+
+    // ── Helper: construir un bloque de checkboxes ──────────────────────
+    function mkBloque(etiqueta, items, preseleccionado) {
+        var wrap = document.createElement('div');
+        wrap.style.marginBottom = '8px';
+
+        var lbl = document.createElement('div');
+        lbl.style.cssText = 'font-size:10px;font-weight:700;text-transform:uppercase;' +
+            'color:var(--nb-text-light);margin-bottom:3px;display:flex;align-items:center;gap:5px;';
+        lbl.textContent = etiqueta;
+
+        var btnT = document.createElement('button');
+        btnT.style.cssText = 'font-size:9px;border:1px solid var(--nb-border);background:none;cursor:pointer;padding:1px 5px;border-radius:3px;';
+        btnT.textContent = 'Todos';
+        var btnN = document.createElement('button');
+        btnN.style.cssText = btnT.style.cssText;
+        btnN.textContent = 'Ninguno';
+        lbl.appendChild(btnT); lbl.appendChild(btnN);
+        wrap.appendChild(lbl);
+
+        var list = document.createElement('div');
+        list.style.cssText = 'max-height:110px;overflow-y:auto;border:1px solid var(--nb-border);' +
+            'border-radius:4px;padding:4px 6px;display:flex;flex-wrap:wrap;gap:3px;';
+
+        var chks = [];
+        items.forEach(function(item) {
+            var lblIten = document.createElement('label');
+            lblIten.style.cssText = 'display:inline-flex;align-items:center;gap:3px;cursor:pointer;' +
+                'font-size:10px;white-space:nowrap;padding:2px 5px;border-radius:3px;' +
+                'background:var(--nb-grey-bg);user-select:none;';
+            var chk = document.createElement('input');
+            chk.type = 'checkbox';
+            chk.dataset.item = item;
+            chk.style.cursor = 'pointer';
+            // Pre-seleccionar: si preseleccionado es un valor concreto → solo ese; si null → todos
+            chk.checked = (preseleccionado === null) ? true : (item === preseleccionado);
+            lblIten.appendChild(chk);
+            lblIten.appendChild(document.createTextNode(
+                item.indexOf('-') > 4 ? labelDia(item) : item   // fecha YYYY-MM-DD vs franja HH:MM
+            ));
+            list.appendChild(lblIten);
+            chks.push(chk);
+        });
+        wrap.appendChild(list);
+
+        btnT.addEventListener('click', function() { chks.forEach(function(c) { c.checked = true;  }); });
+        btnN.addEventListener('click', function() { chks.forEach(function(c) { c.checked = false; }); });
+
+        return { wrap: wrap, chks: chks };
+    }
+
+    // Bloque Franjas: si abrimos desde franja → pre-check solo la seleccionada; desde día → todos
+    var bFranjas = mkBloque('Franjas', franjaItems, modo === 'franja' ? opts.seleccionado : null);
+    // Bloque Días:   si abrimos desde día   → pre-check solo el seleccionado; desde franja → todos
+    var bDias    = mkBloque('Días',    diaItems,    modo === 'dia'    ? opts.seleccionado : null);
+
+    pop.appendChild(bFranjas.wrap);
+    pop.appendChild(bDias.wrap);
+
+    // ── Inputs de valor ───────────────────────────────────────────────
+    var fieldL = document.createElement('label');
+    fieldL.style.cssText = 'display:block;margin-bottom:6px;';
+    fieldL.innerHTML = '<span style="font-size:10px;color:var(--nb-text-light);">Llamadas</span><br>';
+    var inpL = document.createElement('input');
+    inpL.type = 'number'; inpL.min = '0'; inpL.placeholder = 'sin cambios';
+    inpL.style.cssText = 'width:100%;box-sizing:border-box;padding:4px 6px;font-size:12px;' +
+        'border:1px solid var(--nb-primary);border-radius:4px;';
+    fieldL.appendChild(inpL);
+    pop.appendChild(fieldL);
+
+    var fieldA = document.createElement('label');
+    fieldA.style.cssText = 'display:block;margin-bottom:10px;';
+    fieldA.innerHTML = '<span style="font-size:10px;color:var(--nb-text-light);">AHT (seg)</span><br>';
+    var inpA = document.createElement('input');
+    inpA.type = 'number'; inpA.min = '0'; inpA.placeholder = 'sin cambios';
+    inpA.style.cssText = 'width:100%;box-sizing:border-box;padding:4px 6px;font-size:12px;' +
+        'border:1px solid var(--nb-border);border-radius:4px;';
+    fieldA.appendChild(inpA);
+    pop.appendChild(fieldA);
+
+    // ── Botones ───────────────────────────────────────────────────────
+    var footer = document.createElement('div');
+    footer.style.cssText = 'display:flex;gap:6px;';
+    var btnOk  = document.createElement('button');
+    btnOk.className = 'btn btn-primary btn-sm'; btnOk.style.flex = '1'; btnOk.textContent = 'Aplicar';
+    var btnCan = document.createElement('button');
+    btnCan.className = 'btn btn-secondary btn-sm'; btnCan.style.flex = '1'; btnCan.textContent = 'Cancelar';
+    footer.appendChild(btnOk); footer.appendChild(btnCan);
+    pop.appendChild(footer);
+
+    document.body.appendChild(pop);
+
+    var rect = anchorEl.getBoundingClientRect();
+    var top  = rect.bottom + 4;
+    var left = Math.min(rect.left, window.innerWidth - 290);
+    if (top + 520 > window.innerHeight) top = Math.max(4, rect.top - 520);
+    pop.style.top  = top  + 'px';
+    pop.style.left = left + 'px';
+
+    function cerrar() { pop.remove(); }
+
+    function aplicar() {
+        var nuevoL = inpL.value !== '' ? (parseInt(inpL.value) || 0) : null;
+        var nuevoA = inpA.value !== '' ? (parseInt(inpA.value) || 0) : null;
+        if (nuevoL === null && nuevoA === null) { cerrar(); return; }
+
+        var selFranjas = bFranjas.chks.filter(function(c) { return c.checked; }).map(function(c) { return c.dataset.item; });
+        var selDias    = bDias.chks.filter(function(c)    { return c.checked; }).map(function(c) { return c.dataset.item; });
+        if (!selFranjas.length || !selDias.length) {
+            toast('Selecciona al menos una franja y un día.', 'warning'); return;
+        }
+
+        var count = 0;
+        selDias.forEach(function(fecha) {
+            selFranjas.forEach(function(franja) {
+                var llam = nuevoL !== null ? nuevoL : _getLlam(fecha, franja, svcId);
+                var aht  = nuevoA !== null ? nuevoA : _getAHT(fecha,  franja, svcId);
+                if (!State.forecast.llamadas[fecha])          State.forecast.llamadas[fecha] = {};
+                if (!State.forecast.llamadas[fecha][franja])  State.forecast.llamadas[fecha][franja] = {};
+                if (!State.forecast.aht[fecha])               State.forecast.aht[fecha] = {};
+                if (!State.forecast.aht[fecha][franja])       State.forecast.aht[fecha][franja] = {};
+                State.forecast.llamadas[fecha][franja][svcId] = llam;
+                State.forecast.aht[fecha][franja][svcId]      = aht;
+                count++;
+            });
+        });
+        State.forecast.editado = true;
+        programarGuardado();
+        toast('✅ ' + count + ' celda' + (count !== 1 ? 's' : '') + ' actualizadas', 'success');
+        cerrar();
+        _pvRefrescar();
+    }
+
+    btnX.addEventListener('click',   cerrar);
+    btnCan.addEventListener('click', cerrar);
+    btnOk.addEventListener('click',  aplicar);
+    inpL.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter')  { inpA.focus(); inpA.select(); }
+        if (e.key === 'Escape') cerrar();
+    });
+    inpA.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter')  aplicar();
+        if (e.key === 'Escape') cerrar();
+    });
+    setTimeout(function() {
+        document.addEventListener('mousedown', function handler(ev) {
+            if (!pop.contains(ev.target) && ev.target !== anchorEl) {
+                cerrar();
+                document.removeEventListener('mousedown', handler);
+            }
+        });
+    }, 50);
+    inpL.focus();
+}
+
 function _pvRenderCelda(td, llam, aht, modo) {
     if (modo === 'aht') {
         td.innerHTML = aht > 0
@@ -711,8 +949,19 @@ function _pvEditarCelda(td) {
         }
         inp.addEventListener('blur', ok);
         inp.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') ok();
+            if (e.key === 'Enter') {
+                ok();
+                _pvNavCelda(td, 'franja', +1);
+            }
             if (e.key === 'Escape') _pvRenderCelda(td, llam0, aht0, modo);
+            if (e.key === 'Tab' && !e.shiftKey) {
+                e.preventDefault(); ok();
+                _pvNavCelda(td, 'fecha', +1);
+            }
+            if (e.key === 'Tab' && e.shiftKey) {
+                e.preventDefault(); ok();
+                _pvNavCelda(td, 'fecha', -1);
+            }
         });
         inp.focus(); inp.select();
     } else {
@@ -752,16 +1001,79 @@ function _pvEditarCelda(td) {
         inpL.addEventListener('keydown', function(e) {
             if (e.key === 'Enter') { inpA.focus(); inpA.select(); }
             if (e.key === 'Escape') cancelar();
+            if (e.key === 'Tab' && !e.shiftKey) {
+                e.preventDefault();
+                confirmar();
+                _pvNavCelda(td, 'franja', +1);
+            }
         });
         inpA.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') confirmar();
+            if (e.key === 'Enter') {
+                confirmar();
+                _pvNavCelda(td, 'franja', +1);
+            }
             if (e.key === 'Escape') cancelar();
+            if (e.key === 'Tab' && !e.shiftKey) {
+                e.preventDefault();
+                confirmar();
+                _pvNavCelda(td, 'fecha', +1);
+            }
+            if (e.key === 'Tab' && e.shiftKey) {
+                e.preventDefault();
+                confirmar();
+                _pvNavCelda(td, 'fecha', -1);
+            }
         });
         inpL.focus(); inpL.select();
     }
 }
 
-// ── Comprobación de datos para semana actual ──────────────────────────────
+// ── Navegación teclado entre celdas ──────────────────────────────────────
+
+/**
+ * Mueve el foco a la celda adyacente y abre su editor inline.
+ * @param {HTMLElement} tdActual  - celda de origen
+ * @param {'franja'|'fecha'} dim  - dimensión en la que moverse
+ * @param {number} dir            - +1 siguiente / -1 anterior
+ */
+function _pvNavCelda(tdActual, dim, dir) {
+    var tabla = document.getElementById('fTabla');
+    if (!tabla) return;
+    var celdas = Array.prototype.slice.call(tabla.querySelectorAll('td[data-fecha][data-franja]'));
+    var idx    = celdas.indexOf(tdActual);
+    if (idx < 0) return;
+
+    var curFecha  = tdActual.dataset.fecha;
+    var curFranja = tdActual.dataset.franja;
+    // Construir listas únicas de fechas y franjas en orden de aparición
+    var fechas  = [], franjas = [], seen = {};
+    celdas.forEach(function(c) {
+        if (!seen['f' + c.dataset.fecha])   { seen['f' + c.dataset.fecha]   = 1; fechas.push(c.dataset.fecha); }
+        if (!seen['fr' + c.dataset.franja]) { seen['fr' + c.dataset.franja] = 1; franjas.push(c.dataset.franja); }
+    });
+
+    var nextFecha  = curFecha;
+    var nextFranja = curFranja;
+    if (dim === 'franja') {
+        var fi = franjas.indexOf(curFranja) + dir;
+        if (fi < 0 || fi >= franjas.length) return;
+        nextFranja = franjas[fi];
+    } else {
+        var di = fechas.indexOf(curFecha) + dir;
+        if (di < 0 || di >= fechas.length) return;
+        nextFecha = fechas[di];
+    }
+
+    var dest = tabla.querySelector('td[data-fecha="' + nextFecha + '"][data-franja="' + nextFranja + '"]');
+    if (dest) {
+        var prev = tabla.querySelector('td.f-sel');
+        if (prev) prev.classList.remove('f-sel');
+        dest.classList.add('f-sel');
+        _pvEditarCelda(dest);
+    }
+}
+
+// ── Comprobación de datos ─────────────────────────────────────────────────
 
 function _pvHayDatosMes(primerDia) {
     var nDias = new Date(primerDia.getFullYear(), primerDia.getMonth() + 1, 0).getDate();
@@ -797,18 +1109,37 @@ function _pvCrearTablaSemana(lunes) {
     // ── Cabecera: corner + Lun-Dom + Total ────────────────────────────
     var thead = document.createElement('thead');
     var trH   = document.createElement('tr');
-    trH.innerHTML = '<th class="f-th-corner">Franja</th>';
+    var thCornerSem = document.createElement('th');
+    thCornerSem.className = 'f-th-corner';
+    thCornerSem.textContent = 'Franja';
+    trH.appendChild(thCornerSem);
     fechas.forEach(function(f, i) {
         var esFDS  = (i === 5 || i === 6);
         var dDate  = _addDays(lunes, i);
         var hayDia = !!State.forecast.llamadas[f];
-        trH.innerHTML += '<th class="f-th-day' + (esFDS ? ' f-th-fds' : '') + '" data-fecha="' + f + '">' +
-            _DIAS_SHORT[i] + '<br>' +
+        var th = document.createElement('th');
+        th.className = 'f-th-day' + (esFDS ? ' f-th-fds' : '');
+        th.dataset.fecha = f;
+        th.style.cursor = 'pointer';
+        th.title = 'Clic: editar todas las franjas de este día';
+        th.innerHTML = _DIAS_SHORT[i] + '<br>' +
             '<span style="font-weight:400;font-size:10px;">' + dDate.getDate() + '/' + (dDate.getMonth() + 1) + '</span>' +
-            (!hayDia ? '<br><span style="font-size:9px;color:var(--nb-text-light);">sin datos</span>' : '') +
-            '</th>';
+            (!hayDia ? '<br><span style="font-size:9px;color:var(--nb-text-light);">sin datos</span>' : '');
+        th.addEventListener('click', function() {
+            _pvPopoverMasivo(th, '📅 ' + f, {
+                modo: 'dia',
+                seleccionado: f,
+                todosItems:   fechas,
+                otrosDim:     franjas,
+                svcId: svcId
+            });
+        });
+        trH.appendChild(th);
     });
-    trH.innerHTML += '<th class="f-th-day">Total</th>';
+    var thTotSem = document.createElement('th');
+    thTotSem.className = 'f-th-day';
+    thTotSem.textContent = 'Total';
+    trH.appendChild(thTotSem);
     thead.appendChild(trH);
     table.appendChild(thead);
 
@@ -824,7 +1155,18 @@ function _pvCrearTablaSemana(lunes) {
         var tr  = document.createElement('tr');
         var tdF = document.createElement('td');
         tdF.className = 'f-td-franja';
+        tdF.style.cursor = 'pointer';
+        tdF.title = 'Clic: editar ' + franja + ' en los 7 días';
         tdF.textContent = franja;
+        tdF.addEventListener('click', function() {
+            _pvPopoverMasivo(tdF, '⏱ Franja ' + franja, {
+                modo: 'franja',
+                seleccionado: franja,
+                todosItems:   franjas,
+                otrosDim:     fechas,
+                svcId: svcId
+            });
+        });
         tr.appendChild(tdF);
 
         var rowTotal = 0, rowAhtSum = 0, rowAhtN = 0;

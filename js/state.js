@@ -133,6 +133,7 @@ function guardarEstado() {
             convenio:         State.convenio,
             perfiles:         State.perfiles,
             staff:            { todos: State.staff.todos },
+            forecast:         { llamadas: State.forecast.llamadas, aht: State.forecast.aht, editado: State.forecast.editado },
             dimensionamiento: { shrinkageMensual: State.dimensionamiento.shrinkageMensual },
             _version:         State._version
         };
@@ -200,6 +201,11 @@ function restaurarEstado() {
         }
         if (saved.dimensionamiento && saved.dimensionamiento.shrinkageMensual) {
             State.dimensionamiento.shrinkageMensual = saved.dimensionamiento.shrinkageMensual;
+        }
+        if (saved.forecast) {
+            if (saved.forecast.llamadas) State.forecast.llamadas = saved.forecast.llamadas;
+            if (saved.forecast.aht)      State.forecast.aht      = saved.forecast.aht;
+            State.forecast.editado = !!saved.forecast.editado;
         }
         // Añadir campos libres predefinidos que falten (migración no destructiva)
         _sembrarCamposLibresDefecto();
