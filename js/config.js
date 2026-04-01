@@ -74,40 +74,85 @@ const ROLES_CAMPO_LIBRE = [
     { value: 'ocupacion_max',    label: 'Ocupación máxima (%)'        }
 ];
 
-/**
- * Devuelve la suma de shrinkage adicional de los campos libres
- * del convenio que estén activos y tengan rol 'shrinkage'.
- * @returns {number} porcentaje acumulado (puede ser 0)
- */
-function getShrinkageCamposLibres() {
-    return State.convenio.camposLibres
-        .filter(function(c) { return !c.noAplica && c.rol === 'shrinkage'; })
-        .reduce(function(acc, c) { return acc + (parseFloat(c.valor) || 0); }, 0);
-}
-
-/**
- * Devuelve la reducción de jornada acumulada de campos libres activos.
- * @returns {number}
- */
-function getReduccionJornadaCamposLibres() {
-    return State.convenio.camposLibres
-        .filter(function(c) { return !c.noAplica && c.rol === 'reduccion_jornada'; })
-        .reduce(function(acc, c) { return acc + (parseFloat(c.valor) || 0); }, 0);
-}
-
-/**
- * Devuelve el mínimo de ocupacion_max activo, o null si no hay ninguno.
- * @returns {number|null}
- */
-function getOcupacionMaxCamposLibres() {
-    const valores = State.convenio.camposLibres
-        .filter(function(c) { return !c.noAplica && c.rol === 'ocupacion_max'; })
-        .map(function(c) { return parseFloat(c.valor); })
-        .filter(function(v) { return !isNaN(v); });
-    return valores.length ? Math.min.apply(null, valores) : null;
-}
-
 /** Siguiente color de la paleta para un servicio nuevo */
 function siguienteColorServicio() {
     return COLORES_SERVICIO[State.config.servicios.length % COLORES_SERVICIO.length];
+}
+
+// ── Getters efectivos con resolución de reglas F6 ─────────────────────────
+
+/**
+ * Devuelve el shrinkage efectivo para un servicio + agente en un contexto.
+ * Combina shrinkageOper + absentismo del servicio y aplica el override de reglas.
+ *
+ * @param {object} svc      Objeto servicio de State.config.servicios[]
+ * @param {object|null} agente   Contexto de agente (ver resolverReglasParaAgente)
+ * @param {object|null} contexto { fecha, franja }
+ * @returns {number} Shrinkage total en % (0-99)
+ */
+function getShrinkageEfectivo(svc, agente, contexto) {
+    // Base del servicio: shrinkageOper + absentismo (si aplican)
+    var base = (getVal(svc.shrinkageOper) || 0) + (getVal(svc.absentismo) || 0);
+
+    // Override de reglas
+    var resuelto = resolverReglasParaAgente(agente || null, contexto || null);
+    if (resuelto.shrinkage != null) {
+        return Math.min(resuelto.shrinkage, 99);
+    }
+
+    // Sin override: sum Oper + Abs de convenio pvdShrinkage si existe
+    return Math.min(base, 99);
+}
+
+/**
+ * Devuelve la ocupación máxima efectiva para un servicio + agente.
+ * @param {object} svc
+ * @param {object|null} agente
+ * @param {object|null} contexto
+ * @returns {number} Ocupación máxima en % (1-100)
+ */
+function getOcupacionMaxEfectivo(svc, agente, contexto) {
+    var resuelto = resolverReglasParaAgente(agente || null, contexto || null);
+    if (resuelto.ocupacionMax != null) return resuelto.ocupacionMax;
+    return getVal(svc.ocupacionMax) || 85;
+}
+
+/**
+ * Devuelve el AHT efectivo para un servicio + agente + franja.
+ * Si hay ahtOverride en reglas, ese tiene prioridad.
+ * Si no, usa el AHT de la previsión (ahtFranja) o el global del servicio.
+ *
+ * @param {object} svc
+ * @param {number|null} ahtFranja  AHT de la celda de previsión (puede ser null)
+ * @param {object|null} agente
+ * @param {object|null} contexto
+ * @returns {number} AHT en segundos
+ */
+function getAhtEfectivo(svc, ahtFranja, agente, contexto) {
+    var resuelto = resolverReglasParaAgente(agente || null, contexto || null);
+    if (resuelto.ahtOverride != null) return resuelto.ahtOverride;
+    if (ahtFranja != null)            return ahtFranja;
+    return getVal(svc.ahtGlobal) || 180;
+}
+
+/**
+ * Devuelve el SLA objetivo en % para un servicio.
+ * @param {object} svc
+ * @returns {number}
+ */
+function getSlaObjetivo(svc) {
+    return getVal(svc.sla) || 80;
+}
+
+/**
+ * Devuelve el tiempo umbral SLA en segundos para un servicio.
+ * @param {object} svc
+ * @returns {number}
+ */
+function getTiempoSla(svc) {
+    // Si tiempoSla es {valor,noAplica}, usa getVal; si es número plano, devolverlo directamente
+    if (svc.tiempoSla != null && typeof svc.tiempoSla === 'object') {
+        return getVal(svc.tiempoSla) || 20;
+    }
+    return svc.tiempoSla || 20;
 }

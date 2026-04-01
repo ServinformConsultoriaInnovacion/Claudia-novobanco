@@ -169,18 +169,21 @@ function dimensionarTodo(opciones) {
             servicios.forEach(function(svc) {
                 if (opciones.soloServicio && svc.id !== opciones.soloServicio) return;
 
-                var llamadas = (dataSvcs[svc.id] || 0);
+                var llamadas  = (dataSvcs[svc.id] || 0);
+                var ctx       = { fecha: fecha, franja: franja };
                 var ahtFranja = ((ahtData[fecha] || {})[franja] || {})[svc.id];
-                var aht = ahtFranja || svc.aht || 180;
 
-                // Shrinkage: del servicio + global extra + opciones
-                var shrinkBase  = _getVal(svc.shrinkage) || 0;
+                // Getters efectivos F6: resuelven reglas de excepción si las hay
+                // agente = null → reglas sin filtro de staff (p.ej. reglas por servicio)
+                var aht       = getAhtEfectivo(svc, ahtFranja != null ? ahtFranja : null, null, ctx);
+                var shrinkBase  = getShrinkageEfectivo(svc, null, ctx);
                 var shrinkExtra = opciones.shrinkageExtra || 0;
                 var shrinkTotal = shrinkBase + shrinkExtra;
+                var ocupMax     = getOcupacionMaxEfectivo(svc, null, ctx);
+                var slaObj      = getSlaObjetivo(svc);
+                var tiempoSla   = getTiempoSla(svc);
 
-                // Ajustar llamadas por shrinkage:
-                // Los agentes que calculamos son los productivos; necesitamos más para absorber la improd.
-                // El ajuste se aplica al resultado final dividiendo por (1 - shrinkage/100)
+                // Ajustar agentes por shrinkage total
                 var shrinkFactor = shrinkTotal > 0 ? (1 - shrinkTotal / 100) : 1;
                 if (shrinkFactor <= 0) shrinkFactor = 0.01;
 
@@ -188,9 +191,9 @@ function dimensionarTodo(opciones) {
                     llamadas:    llamadas,
                     granMinutos: gran,
                     ahtSegundos: aht,
-                    slaObjetivo: _getVal(svc.sla)        || 80,
-                    tiempoSla:   svc.tiempoSla            || 20,
-                    ocupacionMax: _getVal(svc.ocupacionMax) || 85
+                    slaObjetivo: slaObj,
+                    tiempoSla:   tiempoSla,
+                    ocupacionMax: ocupMax
                 });
 
                 // Agentes con shrinkage aplicado (redondeando hacia arriba)
@@ -235,13 +238,4 @@ function dimensionarTodo(opciones) {
     };
 
     return { filas: filas, resumen: resumen };
-}
-
-/** Helper interno: extrae valor de campo { valor, noAplica } o devuelve el valor directo */
-function _getVal(campo) {
-    if (campo === null || campo === undefined) return null;
-    if (typeof campo === 'object' && 'valor' in campo) {
-        return campo.noAplica ? null : campo.valor;
-    }
-    return campo;
 }

@@ -2,8 +2,8 @@
 ## Herramienta Universal de Dimensionamiento WFM con Erlang C
 ## Previsión de Llamadas + AHT → Agentes Necesarios
 
-**Fecha:** 31 de marzo de 2026  
-**Versión:** 1.3  
+**Fecha:** 1 de abril de 2026  
+**Versión:** 1.6  
 **Autor:** PAX Servinform  
 
 ---
@@ -273,7 +273,9 @@ Todos los campos tienen **"No aplica"** para adaptar la herramienta a cualquier 
 | Vacaciones (días lab.) | 23 | ✅ | Art. 29 |
 | Shrinkage PVD (%) | 16.7 | ✅ | Art. 57 |
 | Rotación FDS default (%) | 33 | ✅ | — |
-| **Campos libres** | — | — | El usuario añade pares nombre-valor adicionales |
+| **Reglas de excepción** | — | — | Motor de reglas condicionales por segmento de staff: filtro (servicio, turno, estado, contrato, sede, antigüedad, franja) + parámetros de excepción (shrinkage, jornada, rotación, carga, teletrabajo). Ver §10 |
+
+> **Nota (v1.4):** Los antiguos "campos libres" planos están rediseñados como **Reglas de Excepción por Segmento de Staff** (§10). La migración es automática y no destructiva: los campos libres existentes se convierten en reglas con filtro vacío (ámbito global).
 
 **A3. Gestión de Perfiles**
 
@@ -628,7 +630,7 @@ const State = {
 | Tarea | Detalle |
 |---|---|
 | Panel A1: Multi-servicio | Añadir/eliminar servicios. Cada servicio con su propio formulario (nombre, color, SLA, AHT, etc., todos con "No aplica"). Vista de accordeón por servicio |
-| Panel A2: Convenio | Todos los campos con toggle "No aplica". Preset "Convenio Español CC". Campos libres añadibles |
+| Panel A2: Convenio | Todos los campos con toggle "No aplica". Preset "Convenio Español CC". Reglas de excepción por segmento de staff (ver §10) |
 | Panel A3: Perfiles | UI de guardar/cargar/borrar perfiles. Restore automático del último perfil |
 | Sincronización | PVD del convenio → shrinkage de cada servicio si no tiene el suyo. Cambios en convenio → recalculo de factores |
 
@@ -760,6 +762,11 @@ const State = {
 | Navegación teclado en previsión | ★ NUEVO (impl.) | Tab/Enter/Shift+Tab/Escape en celdas de edición inline. |
 | Demo reactivo a dimensiones | ★ NUEVO (impl.) | Regenera datos demo al cambiar granularidad u horario. |
 | Persistencia `State.forecast` | ★ NUEVO (impl.) | llamadas, AHT y flag editado guardados en localStorage. |
+| Reglas de excepción por segmento | ★ NUEVO (impl.) | Motor de reglas CRUD: filtro staff + parámetros de excepción. Sustituye campos libres planos. F1–F5 ✅ |
+| Tooltip/info por parámetro | ★ NUEVO (impl.) | Botón ℹ en cada parámetro. Popover con descripción + efecto en dimensionamiento. |
+| Modal resumen regla | ★ NUEVO (impl.) | Botón ℹ️ en header de tarjeta. Modal con estado, filtros activos y parámetros activos. |
+| Motor de resolución de reglas | ★ NUEVO (impl.) | `resolverReglasParaAgente()` con prioridad, modo conflicto y vigencia temporal. Getters efectivos en config.js. F6 ✅ |
+| ~~Campos libres (legacy)~~ | ~~ELIMINADO~~ | `camposLibres` borrado del modelo, UI y config.js. No hay perfiles legacy. |
 
 ---
 
@@ -800,8 +807,279 @@ const State = {
 | Rendimiento cuadrante para plantillas grandes | Web Workers para cálculos > 200 agentes × 365 días |
 | Compatibilidad formatos Excel de entrada | Parser con detección automática de columnas y hojas, tolerante a variaciones |
 | Perfiles con configuraciones incompatibles | Versión en cada perfil. Migración automática de estructura |
+| Conflicto entre reglas de excepción activas | Modo de conflicto por regla: `sustituir` / `sumar` / `más restrictivo`. Prioridad numérica configurable |
+| ~~Migración `camposLibres`~~ | Eliminado: `camposLibres` borrado del modelo. No existe código de migración ni legacy. |
+| Reglas activas sin staff cargado | Si `State.staff` está vacío, las dimensiones de filtro basadas en agentes reales se ignoran sin error |
+
+---
+
+## 10. Reglas de Excepción por Segmento de Staff
+
+> **Estado:** F1–F5 + UX (botones ℹ, modal resumen) implementados en v1.5.  
+> Los "campos libres" planos han sido **eliminados completamente** del modelo, la UI y config.js. No existe código legacy.
+
+### 10.1. Concepto
+
+Sustitución del sistema de "campos libres" planos por un **motor de reglas condicionales**: cada regla define *a quién aplica* (filtro de staff) y *qué parámetros cambian* (excepción). Las reglas sin filtro son equivalentes a los actuales campos libres (ámbito global).
+
+### 10.2. Modelo de datos
+
+```js
+// State.convenio.reglasExcepcion = []
+{
+    id:            'uuid',
+    nombre:        'Reducción jornada agentes FDS',
+    activa:        true,
+    prioridad:     10,            // Mayor número = mayor prioridad en conflicto
+    vigencia: {                   // null = sin restricción temporal
+        desde: '2026-06-01',
+        hasta: '2026-12-31'
+    },
+    modoConflicto: 'sustituir',   // 'sustituir' | 'sumar' | 'mas_restrictivo'
+    notas:         '',            // Comentario libre para auditoría
+
+    // ── BLOQUE 1: Filtro de staff ([] = todos / null = sin restricción) ──
+    filtro: {
+        servicios:       [],   // State.config.servicios (dinámico)
+        tiposTurno:      [],   // mañana | tarde | noche | fds | partido | guardia
+        estados:         [],   // fijo | temporal | excedencia | reduccion_activa
+        tiposContrato:   [],   // completo | parcial_75 | parcial_50
+        gruposPro:       [],   // teleoperador | especialista | supervisor
+        sedes:           [],   // State.staff.todos (dinámico)
+        antiguedadMin:   null, // años
+        antiguedadMax:   null,
+        franjas:         null  // null = sin restricción horaria
+                               // { desde: '22:00', hasta: '06:00', dias: [6,0] }
+    },
+
+    // ── BLOQUE 2: Parámetros de excepción ────────────────────────────────
+    parametros: {
+
+        // — Cálculo base —
+        shrinkage:           { activa: false, valor: null }, // %
+        reduccionJornada:    { activa: false, valor: null }, // % reduce horas anuales
+        ocupacionMax:        { activa: false, valor: null }, // % cap Erlang C
+        ahtOverride:         { activa: false, valor: null }, // seg
+        jornadaSemanal:      { activa: false, valor: null }, // horas
+        vacaciones:          { activa: false, valor: null }, // días laborables
+
+        // — Rotación y turnos —
+        rotacion: {
+            frecuencia:          { activa: false, valor: null },
+            // semanal | quincenal | mensual | trimestral | no_rota
+            patronFds:           { activa: false, valor: null },
+            // 1_cada_2 | 1_cada_3 | 1_cada_4 | libre | nunca
+            fdsAlMes:            { activa: false, valor: null },
+            cambiosTurnoMes:     { activa: false, valor: null },
+            cambiosTurnoAnio:    { activa: false, valor: null },
+            descansoCambioTurno: { activa: false, valor: null }, // horas
+            maxNochesConsec:     { activa: false, valor: null },
+            nochesAlMes:         { activa: false, valor: null }
+        },
+
+        // — Carga especial —
+        carga: {
+            festivosObligAnio:   { activa: false, valor: null },
+            guardiasAlMes:       { activa: false, valor: null },
+            jornadaPartidaMes:   { activa: false, valor: null },
+            horasExtraMes:       { activa: false, valor: null },
+            horasExtraAnio:      { activa: false, valor: null },
+            bolsaHoras:          { activa: false, valor: null }
+        },
+
+        // — Teletrabajo —
+        teletrabajo: {
+            diasSemana:          { activa: false, valor: null },
+            diasMes:             { activa: false, valor: null }
+        },
+
+        // — Campos extra libres (equivalente a los campos libres actuales) —
+        extras: [] // [{ nombre, valor, noAplica, rol }]
+    }
+}
+```
+
+### 10.3. UI — Panel A2, sub-panel "Reglas de excepción"
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  ▼ Reglas de excepción de staff                  [+ Añadir]    │
+├─────────────────────────────────────────────────────────────────┤
+│  ▼ Reducción jornada agentes FDS                       ✅ ON   │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │ A QUIÉN APLICA (filtro)                                  │  │
+│  │  Servicio:    [Atención ×] [Soporte ×]                    │  │
+│  │  Tipo turno:  [FDS ×] [Nocturno ×]                        │  │
+│  │  Estado:      [Fijo ×]                                     │  │
+│  │  Franja:      22:00 → 06:00   días: [S][D]                │  │
+│  └───────────────────────────────────────────────────────────┘  │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │ QUÉ CAMBIA (excepción)                                   │  │
+│  │  ▼ Cálculo base                                           │  │
+│  │      [✅] Shrinkage             22.5 %                    │  │
+│  │      [✅] Ocupación máxima      80 %                      │  │
+│  │  ▼ Rotación y turnos                                      │  │
+│  │      [✅] Patrón FDS            1 de cada 3               │  │
+│  │      [✅] FDS al mes            2                         │  │
+│  │      [⬜] Frecuencia rotación   —                         │  │
+│  │      [⬜] Descanso cambio turno —                         │  │
+│  │  ▼ Carga especial              (todo desactivado)         │  │
+│  │  ▼ Teletrabajo                 (todo desactivado)         │  │
+│  │  ➕ Campo extra libre                                      │  │
+│  └───────────────────────────────────────────────────────────┘  │
+│  Prioridad: [10]  Conflicto: [sustituir ▾]                      │
+│  Vigencia:  desde [          ]  hasta [          ]              │
+│  Notas:     [                                              ]    │
+│                                                [🗑 Eliminar]    │
+├─────────────────────────────────────────────────────────────────┤
+│  ▶ Agentes FDS turno tarde                             ⬜ OFF  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 10.4. Dimensiones de filtro implementadas
+
+| Dimensión | Tipo UI | Fuente de opciones |
+|---|---|---|
+| Servicio | Multi-chip | `State.config.servicios` (dinámico) |
+| Tipo de turno | Multi-chip | Extraído de `State.staff.todos.tipoTurno` (con fallback a lista STAFF_TURNOS) |
+| Estado del agente | Multi-chip | Extraído de `State.staff.todos.estado` (dinámico) |
+| Sede / centro | Multi-chip | Extraído de `State.staff.todos.sede` (dinámico) |
+| Agente individual | Autocomplete + paste | Búsqueda por código o nombre; pegado masivo desde Excel |
+| Antigüedad mín./máx. | Número (años) | `null` = sin restricción |
+
+> **Nota:** Tipo de contrato y grupo profesional (F7) pendientes hasta que el parser de STAFF lea esas columnas.
+
+### 10.5. Parámetros de excepción implementados
+
+> Cada parámetro incluye un botón **ℹ** que abre un popover con descripción y efecto en el dimensionamiento.
+
+#### Grupo: Cálculo base
+
+| Parámetro | Unidad | Efecto en cálculo |
+|---|---|---|
+| Shrinkage | % | Sustituye / suma al del convenio para este segmento |
+| Reducción de jornada | % | Reduce horas anuales disponibles del agente |
+| Ocupación máxima | % | Cap de Erlang C para este grupo |
+| AHT override | seg | Sustituye el AHT del servicio para este grupo |
+| Jornada semanal | horas | Override de `jornadaSemanal` del convenio |
+| Vacaciones | días lab. | Override del campo `vacaciones` del convenio |
+| **Días de trabajo** | L–D toggles | Restringe los días que trabaja el grupo. Vacío = sin restricción (todos los días del turno) |
+
+> `diasTrabajo` es una **excepción** (define qué días trabaja el grupo), **no** un criterio de filtro.
+
+#### Grupo: Rotación y turnos
+
+| Parámetro | Tipo | Ejemplo | Descripción |
+|---|---|---|---|
+| Frecuencia de rotación | Select | Mensual | Semanal / Quincenal / Mensual / Trimestral / No rota |
+| Patrón FDS | Select | 1 cada 3 | 1 cada 2 / 1 cada 3 / 1 cada 4 / Libre / Nunca |
+| FDS trabajados al mes | Número | 2 | Cuántos fines de semana computa en la distribución |
+| Cambios de turno / mes | Número | 3 | Cap mensual de cambios de turno en el cuadrante |
+| Cambios de turno / año | Número | 12 | Cap anual de cambios de turno |
+| Descanso mín. entre turnos | Horas | 36 | Restricción al cambiar de turno (ej: mañana→noche) |
+| Máx. noches consecutivas | Número | 5 | Override de `maxConsecNF` del convenio por perfil |
+| Noches al mes | Número | 8 | Cap mensual de turnos nocturnos |
+
+#### Grupo: Carga especial
+
+| Parámetro | Tipo | Ejemplo | Descripción |
+|---|---|---|---|
+| Festivos obligatorios / año | Número | 4 | Festivos que computa como trabajados en el cuadrante |
+| Guardias / on-call al mes | Número | 2 | Disponibilidad de guardia fuera de turno habitual |
+| Jornada partida / mes | Número | 3 | Máx. turnos partidos permitidos al mes |
+| Horas extra / mes | Número | 40 | Cap mensual de prolongaciones de jornada |
+| Horas extra / año | Número | 200 | Cap anual de prolongaciones de jornada |
+| Bolsa de horas | Número | +80 | Saldo acumulable/descontable (positivo = crédito) |
+
+#### Grupo: Teletrabajo
+
+| Parámetro | Tipo | Ejemplo | Descripción |
+|---|---|---|---|
+| Días teletrabajo / semana | Número | 2 | Modifica disponibilidad presencial semanal |
+| Días teletrabajo / mes | Número | 8 | Alternativa mensual al parámetro semanal |
+
+### 10.6. Propiedades de control de la regla
+
+| Propiedad | Tipo | Descripción |
+|---|---|---|
+| **Activa** | Toggle | Desactiva la regla sin eliminarla ni perder su configuración |
+| **Prioridad** | Número | Mayor número = mayor prioridad. Si dos reglas colisionan, gana la de mayor prioridad |
+| **Modo de conflicto** | Select | `sustituir` — reemplaza el valor del convenio; `sumar` — acumula sobre el convenio; `más restrictivo` — aplica el valor más limitante |
+| **Vigencia desde/hasta** | Fecha | Para excepciones temporales: maternidad, convenio nuevo, campaña estacional |
+| **Notas** | Texto libre | Motivo de la excepción para auditoría interna |
+
+### 10.7. Motor de resolución (`resolverReglasParaAgente`)
+
+```
+Entrada: agente  { svcId, tipoTurno, estado, contrato, grupoPro, sede, antiguedad }
+         contexto { fecha, franja }
+
+1. Filtrar reglasExcepcion donde regla.activa === true
+2. Filtrar por vigencia (fecha actual dentro de desde..hasta si vigencia existe)
+3. Para cada regla: evaluar filtro contra el agente
+   → true sólo si TODAS las dimensiones configuradas pasan (AND implícito)
+   → dimensión vacía/null = siempre pasa
+4. Ordenar reglas que pasan por prioridad DESC
+5. Fusionar parámetros según modoConflicto de cada regla:
+   - sustituir:       el valor de mayor prioridad gana
+   - sumar:           acumular todos los valores activos
+   - mas_restrictivo: tomar el valor más limitante (mayor shrinkage, menor ocupacionMax, etc.)
+6. Devolver objeto de parámetros resueltos para ese agente en ese contexto
+```
+
+### 10.8. ~~Compatibilidad hacia atrás con `camposLibres`~~
+
+> **ELIMINADO en v1.5.** La aplicación está en desarrollo, sin perfiles guardados que migrar. `camposLibres` se ha borrado del modelo de datos, de la UI y de los getters en `config.js`.
+
+### 10.9. Fases de implementación
+
+| Fase | Descripción | Riesgo | Toca cálculos | Estado |
+|---|---|---|---|---|
+| **F1 — Modelo datos** | `State.convenio.reglasExcepcion = []`. `crearReglaExcepcion()`. `_normalizarRegla()` | Mínimo | No | ✅ |
+| **F2 — CRUD base** | Sub-panel A2. Tarjeta acordeón. Grupo Cálculo base | Bajo | No | ✅ |
+| **F3 — Filtros estáticos** | Chips: Servicio / Tipo turno / Estado | Bajo | No | ✅ |
+| **F3b — Opciones dinámicas** | Opciones extraídas de `State.staff.todos`. Fallback | Bajo | No | ✅ |
+| **F3c — Filtro agentes** | `filtro.agentes[]` + autocomplete + paste Excel | Bajo | No | ✅ |
+| **F3d — Días como excepción** | `diasTrabajo` en `parametros` (no en filtro). Botones L–D + L–V/FDS/Todos | Bajo | No | ✅ |
+| **F4 — Grupos rotación+carga+teletrabajo** | 16 parámetros en 3 grupos con select+number | Bajo | No | ✅ |
+| **F5 — `camposLibres` eliminado** | Sub-panel, getters y modelo borrados completamente | Bajo | No | ✅ |
+| **UX — Botones ℹ por parámetro** | Popover descripción + efecto en cada parámetro | Bajo | No | ✅ |
+| **UX — Modal ℹ️ por regla** | Modal resumen al pulsar ℹ️ en header de tarjeta | Bajo | No | ✅ |
+| **F6 — Motor resolución** | `resolverReglasParaAgente()`. Getters delegan. Modo conflicto. Vigencia | Alto | **Sí** | ✅ |
+| **F7 — Filtros adicionales** | Tipo contrato / Grupo profesional / Antigüedad desde `State.staff` | Bajo | No | ⏳ pendiente |
+
+---
+
+## 11. Estado de Implementación (v1.5 — 1 abril 2026)
+
+### Módulo A — Configuración
+
+| Sub-módulo | Estado | Notas |
+|---|---|---|
+| A1 · Parámetros del servicio (multi-svc) | ✅ | CRUD servicios, color, SLA, AHT, shrinkage, abandono |
+| A2 · Convenio (grid N/A + presets) | ✅ | Grid completo con N/A. Preset Convenio Español CC |
+| A2 · Reglas de excepción F1–F5 + UX | ✅ | CRUD tarjetas, 4 grupos parámetros, filtros dinámicos, botones ℹ, modal resumen |
+| A2 · Motor resolución reglas (F6) | ✅ | `resolverReglasParaAgente()`, `_filtrarReglaContraAgente()`, `_mergearParametros()` en state.js. Getters efectivos en config.js |}
+| A3 · Perfiles | ✅ | Guardar / cargar / borrar / exportar JSON |
+
+### Módulo B — Datos
+
+| Sub-módulo | Estado |
+|---|---|
+| B1 · Subida Excel | ✅ |
+| B2 · Editor Previsión (tabla + gráfico + edición masiva) | ✅ (ver §3.5.B2) |
+| B3 · Análisis Staff | ✅ |
+
+### Módulos C–F — Pendientes
+
+| Panel | Estado |
+|---|---|
+| C · Dimensionamiento Erlang C | ⏳ |
+| D · NDA/NDS + Gráfico + What-If | ⏳ |
+| E · Capacidad + Cuadrante | ⏳ |
+| F · Exportación Excel | ⏳ |
 
 ---
 
 *Claudia novobanco · PAX Servinform · 2026*  
-*Propuesta v1.3 — Cada fase generará su documentación técnica detallada durante la implementación.*
+*Propuesta v1.5 — Actualizada con estado real de implementación.*

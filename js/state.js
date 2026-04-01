@@ -245,6 +245,161 @@ function _normalizarRegla(regla) {
     return regla;
 }
 
+// ── Motor de resolución de reglas de excepción (F6) ───────────────────────
+
+/**
+ * Evalúa qué reglas de excepción aplican a un agente en un contexto dado
+ * y devuelve los parámetros resueltos (merged) según prioridad y modoConflicto.
+ *
+ * @param {object|null} agente   { svcId, tipoTurno, estado, tipoContrato, grupoPro, sede, antiguedad }
+ *                               null → solo reglas sin filtros de staff (p.ej. de servicio)
+ * @param {object|null} contexto { fecha:'YYYY-MM-DD', franja:'HH:MM' }
+ *                               null → se ignora vigencia temporal
+ * @returns {object} Parámetros resueltos: { shrinkage, ocupacionMax, ahtOverride, ... }
+ *          Propiedades ausentes = no hay override (usar valor base del servicio/convenio)
+ */
+function resolverReglasParaAgente(agente, contexto) {
+    var reglas = State.convenio.reglasExcepcion || [];
+    var hoyStr = contexto && contexto.fecha ? contexto.fecha : _fechaHoy();
+
+    // 1. Activas
+    var candidatas = reglas.filter(function(r) { return r.activa; });
+
+    // 2. Vigencia temporal
+    candidatas = candidatas.filter(function(r) {
+        if (!r.vigencia || (!r.vigencia.desde && !r.vigencia.hasta)) return true;
+        if (r.vigencia.desde && hoyStr < r.vigencia.desde) return false;
+        if (r.vigencia.hasta && hoyStr > r.vigencia.hasta)  return false;
+        return true;
+    });
+
+    // 3. Filtro contra el agente (AND implícito; dimensión vacía = siempre pasa)
+    candidatas = candidatas.filter(function(r) {
+        return _filtrarReglaContraAgente(r.filtro, agente, contexto);
+    });
+
+    if (candidatas.length === 0) return {};
+
+    // 4. Ordenar por prioridad DESC
+    candidatas.sort(function(a, b) { return (b.prioridad || 0) - (a.prioridad || 0); });
+
+    // 5. Fusionar parámetros según modoConflicto de cada regla
+    return _mergearParametros(candidatas);
+}
+
+/** Devuelve la fecha de hoy en formato YYYY-MM-DD */
+function _fechaHoy() {
+    var d = new Date();
+    var mm = ('0' + (d.getMonth() + 1)).slice(-2);
+    var dd = ('0' + d.getDate()).slice(-2);
+    return d.getFullYear() + '-' + mm + '-' + dd;
+}
+
+/**
+ * Evalúa si la regla aplica al agente dado.
+ * Dimensión vacía (array vacío / null) = SIEMPRE pasa.
+ * Si agente es null, solo pasan las reglas cuyo filtro está completamente vacío.
+ */
+function _filtrarReglaContraAgente(filtro, agente, contexto) {
+    if (!filtro) return true;
+
+    // Helper: array vacío = sin restricción; si hay valores, el agente debe estar en ellos
+    function pasaArray(campo, valorAgente) {
+        if (!campo || campo.length === 0) return true;
+        if (agente == null) return false;            // regla filtra pero no hay agente
+        return campo.indexOf(valorAgente) !== -1;
+    }
+
+    if (!pasaArray(filtro.servicios,      agente && agente.svcId))           return false;
+    if (!pasaArray(filtro.tiposTurno,     agente && agente.tipoTurno))        return false;
+    if (!pasaArray(filtro.estados,        agente && agente.estado))           return false;
+    if (!pasaArray(filtro.tiposContrato,  agente && agente.tipoContrato))     return false;
+    if (!pasaArray(filtro.gruposPro,      agente && agente.grupoPro))         return false;
+    if (!pasaArray(filtro.sedes,          agente && agente.sede))             return false;
+    if (!pasaArray(filtro.agentes,        agente && agente.id))               return false;
+
+    // Antigüedad [min, max]
+    if (agente && filtro.antiguedadMin != null && agente.antiguedad < filtro.antiguedadMin) return false;
+    if (agente && filtro.antiguedadMax != null && agente.antiguedad > filtro.antiguedadMax) return false;
+
+    // Franja horaria en el contexto
+    if (filtro.franjas && contexto && contexto.franja) {
+        var f = filtro.franjas;
+        if (f.desde && contexto.franja < f.desde) return false;
+        if (f.hasta && contexto.franja > f.hasta)  return false;
+        if (f.dias && f.dias.length > 0 && contexto.fecha) {
+            var diaSemana = new Date(contexto.fecha + 'T00:00:00').getDay();
+            if (f.dias.indexOf(diaSemana) === -1) return false;
+        }
+    }
+
+    return true;
+}
+
+/**
+ * Fusiona los parámetros de las reglas ya ordenadas por prioridad DESC.
+ * Para cada campo:
+ *   - 'sustituir':       gana el de mayor prioridad (primera regla activa en la lista)
+ *   - 'sumar':           acumula todos los valores numéricos
+ *   - 'mas_restrictivo': toma el valor más limitante según semántica del campo
+ */
+function _mergearParametros(reglasPriorizadas) {
+    // Campos "simples" de parametros directamente al nivel raíz:
+    var camposSimples = ['shrinkage','reduccionJornada','ocupacionMax','ahtOverride',
+                         'jornadaSemanal','vacaciones'];
+
+    var resuelto = {};
+
+    camposSimples.forEach(function(campo) {
+        var valorAcum = null;
+        var modoGanador = null;
+
+        reglasPriorizadas.forEach(function(regla) {
+            var p = regla.parametros[campo];
+            if (!p || !p.activa || p.valor == null) return;
+
+            var modo = regla.modoConflicto || 'sustituir';
+
+            if (valorAcum === null) {
+                // Primera regla que aporta valor
+                valorAcum = p.valor;
+                modoGanador = modo;
+                return;
+            }
+
+            // Merge según modo de la regla que ya ganó (la de mayor prioridad marca el modo)
+            if (modoGanador === 'sustituir') {
+                // Ya está. El de mayor prioridad gana; ignorar el resto.
+            } else if (modoGanador === 'sumar') {
+                valorAcum += p.valor;
+            } else if (modoGanador === 'mas_restrictivo') {
+                if (campo === 'ocupacionMax') {
+                    // Más restrictivo = menor ocupación máxima
+                    valorAcum = Math.min(valorAcum, p.valor);
+                } else {
+                    // shrinkage, reduccionJornada → más restrictivo = mayor valor
+                    valorAcum = Math.max(valorAcum, p.valor);
+                }
+            }
+        });
+
+        if (valorAcum !== null) {
+            resuelto[campo] = valorAcum;
+        }
+    });
+
+    // diasTrabajo: sustituir siempre (la de mayor prioridad activa gana)
+    for (var i = 0; i < reglasPriorizadas.length; i++) {
+        var dt = reglasPriorizadas[i].parametros.diasTrabajo;
+        if (dt && dt.activa && Array.isArray(dt.valor) && dt.valor.length > 0) {
+            resuelto.diasTrabajo = dt.valor;
+            break;
+        }
+    }
+
+    return resuelto;
+}
+
 // ── Persistencia localStorage ─────────────────────────────────────────────
 
 const LS_STATE_KEY    = 'nb_state_v1';
