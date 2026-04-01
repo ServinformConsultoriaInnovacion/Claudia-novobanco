@@ -315,6 +315,9 @@ function _renderPanelC(container) {
     secParams.appendChild(rowParams);
     body.appendChild(secParams);
 
+    // ── Shrinkage mensual diferenciado ────────────────────────────────────
+    _pC_seccionShrinkageMensual(body);
+
     // ── Zona de resultados (se rellena al calcular) ───────────────────────
     var zonaResultados = document.createElement('div');
     zonaResultados.id = 'pC_resultados';
@@ -387,104 +390,386 @@ function _pC_renderResultados(zona, res) {
 
     var r = res.resumen;
 
-    // 1. Tarjetas KPI ──────────────────────────────────────────────────────
+    // ── KPI cards ─────────────────────────────────────────────────────────
     var kpis = document.createElement('div');
-    kpis.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));' +
-        'gap:12px;margin-bottom:16px;';
-
+    kpis.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));' +
+        'gap:10px;margin-bottom:16px;';
     [
-        { label: '📞 Total llamadas',    valor: r.totalLlamadas.toLocaleString('es-ES') },
-        { label: '👤 Agentes pico',      valor: r.agentesMax },
-        { label: '👥 Agentes promedio',  valor: r.agentesPromedio },
-        { label: '🗓 Franjas calculadas',valor: r.totalFranjas.toLocaleString('es-ES') }
+        { label: '📞 Total llamadas',   valor: r.totalLlamadas.toLocaleString('es-ES') },
+        { label: '👤 FTE pico',         valor: r.agentesMax },
+        { label: '👥 FTE promedio',     valor: r.agentesPromedio },
+        { label: '🗓 Franjas calc.',    valor: r.totalFranjas.toLocaleString('es-ES') }
     ].forEach(function(kpi) {
         var card = document.createElement('div');
         card.style.cssText = 'background:#fff;border:1px solid var(--nb-border);border-radius:8px;' +
-            'padding:14px 16px;text-align:center;';
+            'padding:12px 14px;text-align:center;';
         card.innerHTML =
-            '<div style="font-size:11px;color:var(--nb-text-light);margin-bottom:6px;">' + kpi.label + '</div>' +
-            '<div style="font-size:22px;font-weight:800;color:var(--nb-primary);">' + kpi.valor + '</div>';
+            '<div style="font-size:10px;color:var(--nb-text-light);margin-bottom:4px;">' + kpi.label + '</div>' +
+            '<div style="font-size:20px;font-weight:800;color:var(--nb-primary);">' + kpi.valor + '</div>';
         kpis.appendChild(card);
     });
     zona.appendChild(kpis);
 
-    // 2. Info de rango ─────────────────────────────────────────────────────
-    if (r.fechaDesde) {
-        var info = document.createElement('div');
-        info.style.cssText = 'font-size:11px;color:var(--nb-text-light);margin-bottom:10px;';
-        info.textContent = 'Periodo: ' + r.fechaDesde + ' → ' + r.fechaHasta;
-        zona.appendChild(info);
+    // ── Tabs C1 / C2 ─────────────────────────────────────────────────────
+    var tabBar = document.createElement('div');
+    tabBar.style.cssText = 'display:flex;gap:0;border-bottom:2px solid var(--nb-border);margin-bottom:14px;';
+
+    var tabContent = document.createElement('div');
+
+    function _activarTab(id) {
+        tabBar.querySelectorAll('button[data-pctab]').forEach(function(b) {
+            var activo = b.dataset.pctab === id;
+            b.style.cssText = 'padding:7px 18px;font-size:12px;font-weight:' + (activo ? '700' : '500') + ';' +
+                'border:none;border-bottom:2px solid ' + (activo ? 'var(--nb-primary)' : 'transparent') + ';' +
+                'background:none;cursor:pointer;color:' + (activo ? 'var(--nb-primary)' : 'var(--nb-text-light)') + ';' +
+                'margin-bottom:-2px;white-space:nowrap;';
+        });
+        tabContent.innerHTML = '';
+        if (id === 'c1') _pC_renderTablaC1(tabContent, res);
+        else             _pC_renderCuadrante(tabContent);
     }
 
-    // 3. Tabla de resultados ────────────────────────────────────────────────
-    var tituloTabla = document.createElement('div');
-    tituloTabla.textContent = 'Detalle por franja';
-    tituloTabla.style.cssText = 'font-size:12px;font-weight:700;color:var(--nb-text);margin-bottom:8px;';
-    zona.appendChild(tituloTabla);
+    [{ id:'c1', label:'📊 Tabla días × franjas' }, { id:'c2', label:'🗓 Cuadrante de planificación' }]
+    .forEach(function(t) {
+        var btn = document.createElement('button');
+        btn.textContent  = t.label;
+        btn.dataset.pctab = t.id;
+        btn.addEventListener('click', function() { _activarTab(t.id); });
+        tabBar.appendChild(btn);
+    });
 
-    // Paginación: mostramos máx. 500 filas con aviso
-    var filasMostrar = res.filas.slice(0, 500);
-    var hayMas = res.filas.length > 500;
+    zona.appendChild(tabBar);
+    zona.appendChild(tabContent);
+    _activarTab('c1');
+}
 
+// ── C1: Tabla pivot días × franjas ────────────────────────────────────────
+
+function _pC_renderTablaC1(zona, res) {
+    var DIAS_C = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+
+    // Construir pivot: fecha → franja → datos agregados
+    var pivot      = {};
+    var fechasSet  = {};
+    var franjasSet = {};
+
+    res.filas.forEach(function(f) {
+        fechasSet[f.fecha]   = true;
+        franjasSet[f.franja] = true;
+        if (!pivot[f.fecha]) pivot[f.fecha] = {};
+        if (!pivot[f.fecha][f.franja]) {
+            pivot[f.fecha][f.franja] = { llamadas:0, ahtPeso:0, ahtPesoN:0, agentes:0, slaMin:null };
+        }
+        var c = pivot[f.fecha][f.franja];
+        c.llamadas   += f.llamadas;
+        c.ahtPeso    += (f.llamadas || 0) * (f.aht || 0);  // AHT ponderado por llamadas
+        c.ahtPesoN   += (f.llamadas || 0);
+        c.agentes    += f.agentes;   // FTE total = suma de servicios
+        if (f.sla !== null) c.slaMin = (c.slaMin === null) ? f.sla : Math.min(c.slaMin, f.sla);
+    });
+
+    var fechas  = Object.keys(fechasSet).sort();
+    var franjas = Object.keys(franjasSet).sort();
+
+    // Máximo FTE por franja (para heatmap de intensidad)
+    var maxFTE = {};
+    franjas.forEach(function(fr) {
+        var mx = 0;
+        fechas.forEach(function(fe) {
+            if (pivot[fe] && pivot[fe][fr]) mx = Math.max(mx, pivot[fe][fr].agentes);
+        });
+        maxFTE[fr] = mx;
+    });
+
+    // Contenedor scroll bidireccional
     var wrap = document.createElement('div');
-    wrap.style.cssText = 'overflow-x:auto;border:1px solid var(--nb-border);border-radius:6px;';
+    wrap.style.cssText = 'overflow:auto;border:1px solid var(--nb-border);border-radius:6px;' +
+        'max-height:calc(100vh - 380px);';
 
     var tbl = document.createElement('table');
-    tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:12px;';
+    tbl.style.cssText = 'border-collapse:collapse;font-size:11px;white-space:nowrap;';
 
-    var cols = ['Fecha','Franja','Servicio','Llamadas','AHT (s)','Tráfico (Erl)','Agentes','SLA real (%)','Ocupación (%)','Shrinkage (%)'];
+    // ── Cabecera ─────────────────────────────────────────────────────────
     var thead = document.createElement('thead');
-    var tr = document.createElement('tr');
-    cols.forEach(function(c) {
+
+    // Fila 1: franjas horarias
+    var trH = document.createElement('tr');
+    var thEsq = document.createElement('th');
+    thEsq.textContent = 'Fecha';
+    thEsq.style.cssText = _pC_thSt(true, true) + 'min-width:105px;z-index:4;';
+    trH.appendChild(thEsq);
+    franjas.forEach(function(fr) {
         var th = document.createElement('th');
-        th.textContent = c;
-        th.style.cssText = 'background:var(--nb-grey-bg);padding:7px 10px;text-align:left;' +
-            'font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.04em;' +
-            'border-bottom:2px solid var(--nb-border);white-space:nowrap;';
-        tr.appendChild(th);
+        th.textContent = fr;
+        th.style.cssText = _pC_thSt(false, true) + 'text-align:center;min-width:72px;';
+        trH.appendChild(th);
     });
-    thead.appendChild(tr);
+    thead.appendChild(trH);
+
+    // Fila 2: FTE pico del periodo por franja
+    var trPico = document.createElement('tr');
+    var tdPicoLbl = document.createElement('td');
+    tdPicoLbl.innerHTML = '<span style="font-size:9px;font-weight:700;color:var(--nb-text-light);">PICO PERIODO</span>';
+    tdPicoLbl.style.cssText = _pC_thSt(true, false) + 'background:var(--nb-grey-bg);z-index:3;';
+    trPico.appendChild(tdPicoLbl);
+    franjas.forEach(function(fr) {
+        var td = document.createElement('td');
+        td.style.cssText = _pC_thSt(false, false) + 'text-align:center;background:var(--nb-grey-bg);border-top:none;';
+        var mx = maxFTE[fr];
+        td.innerHTML = mx > 0
+            ? '<span style="font-size:13px;font-weight:800;color:var(--nb-primary);">' + mx + '</span>'
+            : '<span style="color:var(--nb-border);">—</span>';
+        trPico.appendChild(td);
+    });
+    thead.appendChild(trPico);
     tbl.appendChild(thead);
 
+    // ── Cuerpo ────────────────────────────────────────────────────────────
     var tbody = document.createElement('tbody');
-    filasMostrar.forEach(function(f, i) {
-        var tr2 = document.createElement('tr');
-        tr2.style.background = i % 2 === 0 ? '#fff' : 'var(--nb-grey-bg)';
+    fechas.forEach(function(fecha, iFecha) {
+        var d = new Date(fecha + 'T00:00:00');
+        var diaN = DIAS_C[d.getDay()];
+        var esFDS = (d.getDay() === 0 || d.getDay() === 6);
+        var bgFila = esFDS ? '#eff6ff' : (iFecha % 2 === 0 ? '#fff' : 'var(--nb-grey-bg)');
 
-        var slaColor = f.sla === null ? 'inherit'
-            : f.sla >= 80 ? 'var(--nb-green)'
-            : f.sla >= 60 ? '#F5A623'
-            : 'var(--nb-red)';
+        var tr = document.createElement('tr');
 
-        [
-            f.fecha,
-            f.franja,
-            f.servicio,
-            f.llamadas > 0 ? f.llamadas.toFixed(1) : '—',
-            f.aht,
-            f.trafico > 0  ? f.trafico.toFixed(2) : '—',
-            f.agentes       > 0 ? f.agentes : '—',
-            f.sla !== null  ? '<span style="color:' + slaColor + ';font-weight:700;">' + f.sla + '</span>' : '—',
-            f.ocupacion     > 0 ? f.ocupacion : '—',
-            f.shrinkage     > 0 ? f.shrinkage : '—'
-        ].forEach(function(val) {
-            var td = document.createElement('td');
-            td.innerHTML = val;
-            td.style.cssText = 'padding:6px 10px;border-bottom:1px solid var(--nb-border);';
-            tr2.appendChild(td);
+        // Celda fecha (sticky izquierda)
+        var tdF = document.createElement('td');
+        tdF.style.cssText = 'position:sticky;left:0;z-index:2;' +
+            'background:' + (esFDS ? '#dbeafe' : 'var(--nb-grey-bg)') + ';' +
+            'padding:4px 8px;border-bottom:1px solid var(--nb-border);' +
+            'border-right:2px solid var(--nb-border);min-width:105px;';
+        tdF.innerHTML =
+            '<span style="font-size:9px;font-weight:600;color:' +
+            (esFDS ? '#1e40af' : 'var(--nb-text-light)') + ';">' + diaN + '</span>' +
+            '<br><span style="font-size:12px;font-weight:700;">' +
+            fecha.slice(8) + '/' + fecha.slice(5, 7) + '</span>';
+        tr.appendChild(tdF);
+
+        // Celdas de franjas
+        franjas.forEach(function(fr) {
+            var cel = pivot[fecha] && pivot[fecha][fr];
+            var td  = document.createElement('td');
+            td.style.cssText = 'padding:3px 4px;border-bottom:1px solid var(--nb-border);' +
+                'border-right:1px solid var(--nb-border);text-align:center;' +
+                'vertical-align:middle;background:' + bgFila + ';';
+
+            if (!cel || cel.agentes === 0) {
+                td.innerHTML = '<span style="color:var(--nb-border);font-size:10px;">—</span>';
+            } else {
+                var ahtMedio = cel.ahtPesoN > 0 ? Math.round(cel.ahtPeso / cel.ahtPesoN) : 0;
+                var ratio    = maxFTE[fr] > 0 ? cel.agentes / maxFTE[fr] : 0;
+                var bgFTE = ratio <= 0.4  ? '#dcfce7'
+                          : ratio <= 0.65 ? '#fef9c3'
+                          : ratio <= 0.85 ? '#fed7aa'
+                          :                 '#fecaca';
+                var colorFTE = ratio > 0.65 ? '#7f1d1d' : '#14532d';
+
+                td.innerHTML =
+                    '<div style="font-size:9px;color:var(--nb-text-light);line-height:1.5;">' +
+                        Math.round(cel.llamadas) + '&thinsp;llam' +
+                    '</div>' +
+                    '<div style="font-size:9px;color:var(--nb-text-light);line-height:1.5;">' +
+                        'AHT&thinsp;' + ahtMedio + 's' +
+                    '</div>' +
+                    '<div style="display:inline-block;font-size:14px;font-weight:800;' +
+                        'background:' + bgFTE + ';color:' + colorFTE + ';' +
+                        'border-radius:4px;padding:1px 5px;min-width:26px;line-height:1.6;">' +
+                        cel.agentes +
+                    '</div>';
+            }
+            tr.appendChild(td);
         });
-        tbody.appendChild(tr2);
+        tbody.appendChild(tr);
     });
     tbl.appendChild(tbody);
     wrap.appendChild(tbl);
     zona.appendChild(wrap);
 
-    if (hayMas) {
-        var aviso = document.createElement('div');
-        aviso.style.cssText = 'font-size:11px;color:var(--nb-text-light);margin-top:6px;';
-        aviso.textContent = 'Mostrando las primeras 500 de ' + res.filas.length.toLocaleString('es-ES') + ' filas. Usa los filtros de fecha o servicio para acotar.';
-        zona.appendChild(aviso);
-    }
+    // Leyenda heatmap
+    var ley = document.createElement('div');
+    ley.style.cssText = 'display:flex;flex-wrap:wrap;gap:12px;margin-top:8px;font-size:10px;color:var(--nb-text-light);align-items:center;';
+    ley.innerHTML =
+        '<span style="font-weight:700;">FTE pico:</span>' +
+        '<span style="background:#dcfce7;padding:1px 6px;border-radius:3px;color:#14532d;">≤40%</span>' +
+        '<span style="background:#fef9c3;padding:1px 6px;border-radius:3px;color:#713f12;">41–65%</span>' +
+        '<span style="background:#fed7aa;padding:1px 6px;border-radius:3px;color:#7c2d12;">66–85%</span>' +
+        '<span style="background:#fecaca;padding:1px 6px;border-radius:3px;color:#7f1d1d;">&gt;85%</span>' +
+        '<span style="margin-left:8px;">🟦 = fin de semana</span>' +
+        '<span>Número = agentes de plantilla (incluye shrinkage)</span>';
+    zona.appendChild(ley);
+}
+
+// ── C2: Cuadrante (stub) ──────────────────────────────────────────────────
+
+function _pC_renderCuadrante(zona) {
+    zona.innerHTML =
+        '<div style="padding:48px 20px;text-align:center;color:var(--nb-text-light);">' +
+        '<div style="font-size:40px;margin-bottom:14px;">🗓</div>' +
+        '<div style="font-size:14px;font-weight:700;color:var(--nb-text);margin-bottom:8px;">Cuadrante de planificación</div>' +
+        '<div style="font-size:12px;max-width:420px;margin:0 auto;line-height:1.7;">' +
+        'Mostrará <strong>gestor × día</strong> con turno asignado y semáforo de cobertura vs FTE necesario.<br>' +
+        'Requiere: staff cargado (Panel B) + dimensionamiento calculado (C1).<br>' +
+        '<em>Próxima fase de implementación.</em>' +
+        '</div></div>';
+}
+
+// ── Helpers internos de estilo para tablas C ───────────────────────────────
+
+function _pC_thSt(sticky, topSticky) {
+    return 'padding:5px 7px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;' +
+        'border-bottom:2px solid var(--nb-border);border-right:1px solid var(--nb-border);' +
+        'background:var(--nb-grey-bg);white-space:nowrap;' +
+        (topSticky ? 'position:sticky;top:0;' : '') +
+        (sticky    ? 'position:sticky;left:0;' : '');
+}
+
+// ── Shrinkage mensual diferenciado ────────────────────────────────────────
+
+function _pC_seccionShrinkageMensual(body) {
+    var fechas = Object.keys(State.forecast.llamadas || {}).sort();
+    if (fechas.length === 0) return;
+
+    // Meses únicos presentes en la previsión
+    var vistos = {};
+    var meses  = [];
+    fechas.forEach(function(f) {
+        var m = f.slice(0, 7);
+        if (!vistos[m]) { vistos[m] = true; meses.push(m); }
+    });
+    if (meses.length === 0) return;
+
+    var NOM_MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                     'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+    var sec = document.createElement('div');
+    sec.style.cssText = 'background:var(--nb-grey-bg);border:1px solid var(--nb-border);' +
+        'border-radius:6px;padding:12px 16px;margin-bottom:16px;';
+
+    // Cabecera toggle
+    var hdr = document.createElement('div');
+    hdr.style.cssText = 'display:flex;justify-content:space-between;align-items:center;cursor:pointer;';
+    var togLabel = document.createElement('span');
+    togLabel.style.cssText = 'font-size:11px;font-weight:700;color:var(--nb-text-light);' +
+        'text-transform:uppercase;letter-spacing:.06em;';
+    togLabel.textContent = 'Shrinkage mensual diferenciado';
+    var togBtn = document.createElement('span');
+    togBtn.textContent = '▼ mostrar';
+    togBtn.style.cssText = 'font-size:10px;color:var(--nb-primary);font-weight:600;';
+    hdr.appendChild(togLabel);
+    hdr.appendChild(togBtn);
+
+    var cuerpo = document.createElement('div');
+    cuerpo.style.display = 'none';
+    cuerpo.style.marginTop = '12px';
+
+    hdr.addEventListener('click', function() {
+        var oculto = cuerpo.style.display === 'none';
+        cuerpo.style.display = oculto ? 'block' : 'none';
+        togBtn.textContent  = oculto ? '▲ ocultar' : '▼ mostrar';
+    });
+
+    // Tabla de meses
+    var tbl = document.createElement('table');
+    tbl.style.cssText = 'border-collapse:collapse;font-size:12px;';
+
+    var thd = document.createElement('thead');
+    thd.innerHTML = '<tr>' +
+        '<th style="' + _pC_thSmallSt() + 'text-align:left;min-width:130px;">Mes</th>' +
+        '<th style="' + _pC_thSmallSt() + 'min-width:110px;">Oper. (%)</th>' +
+        '<th style="' + _pC_thSmallSt() + 'min-width:110px;">Absentismo (%)</th>' +
+        '<th style="' + _pC_thSmallSt() + 'min-width:90px;">Factor neto</th>' +
+        '</tr>';
+    tbl.appendChild(thd);
+
+    var tbd = document.createElement('tbody');
+    meses.forEach(function(mesKey, i) {
+        var mes   = parseInt(mesKey.split('-')[1], 10);
+        var anio  = mesKey.split('-')[0];
+        var label = NOM_MESES[mes - 1] + ' ' + anio;
+        var exis  = State.dimensionamiento.shrinkageMensual[mesKey] || {};
+
+        var tr = document.createElement('tr');
+        tr.style.background = i % 2 === 0 ? '#fff' : 'var(--nb-grey-bg)';
+
+        var tdNom = document.createElement('td');
+        tdNom.textContent = label;
+        tdNom.style.cssText = _pC_tdSmallSt() + 'font-weight:600;';
+        tr.appendChild(tdNom);
+
+        var tdOper   = document.createElement('td');
+        tdOper.style.cssText = _pC_tdSmallSt() + 'text-align:center;';
+        var inpOper = _pC_mkInput(exis.operativo ? getVal(exis.operativo) : null, 'oper %');
+        tdOper.appendChild(inpOper);
+        tr.appendChild(tdOper);
+
+        var tdAbs  = document.createElement('td');
+        tdAbs.style.cssText = _pC_tdSmallSt() + 'text-align:center;';
+        var inpAbs = _pC_mkInput(exis.absentismo ? getVal(exis.absentismo) : null, 'abs %');
+        tdAbs.appendChild(inpAbs);
+        tr.appendChild(tdAbs);
+
+        var tdFN = document.createElement('td');
+        tdFN.style.cssText = _pC_tdSmallSt() + 'text-align:center;font-weight:700;';
+        tr.appendChild(tdFN);
+
+        function recalc() {
+            var pvd  = (getConvenio('pvdShrinkage') || 0) / 100;
+            var oper = (parseFloat(inpOper.value) || 0) / 100;
+            var abs  = (parseFloat(inpAbs.value)  || 0) / 100;
+            var fn   = (1 - pvd) * (1 - oper) * (1 - abs);
+            tdFN.textContent = (fn * 100).toFixed(1) + '%';
+            tdFN.style.color = fn < 0.65 ? 'var(--nb-red)'
+                             : fn < 0.72 ? '#d97706'
+                             :             'var(--nb-green)';
+            if (!State.dimensionamiento.shrinkageMensual[mesKey])
+                State.dimensionamiento.shrinkageMensual[mesKey] = {};
+            var sm = State.dimensionamiento.shrinkageMensual[mesKey];
+            sm.operativo  = { valor: parseFloat(inpOper.value) || null,
+                              noAplica: inpOper.value.trim() === '' };
+            sm.absentismo = { valor: parseFloat(inpAbs.value)  || null,
+                              noAplica: inpAbs.value.trim()  === '' };
+            programarGuardado();
+        }
+        inpOper.addEventListener('change', recalc);
+        inpAbs.addEventListener('change',  recalc);
+        recalc();
+
+        tbd.appendChild(tr);
+    });
+    tbl.appendChild(tbd);
+    cuerpo.appendChild(tbl);
+
+    var nota = document.createElement('div');
+    nota.style.cssText = 'font-size:10px;color:var(--nb-text-light);margin-top:8px;';
+    nota.textContent = 'Vacío = usa el valor del servicio (Panel A1). ' +
+        'Factor neto = (1−PVD) × (1−Oper) × (1−Abs).';
+    cuerpo.appendChild(nota);
+
+    sec.appendChild(hdr);
+    sec.appendChild(cuerpo);
+    body.appendChild(sec);
+}
+
+function _pC_mkInput(val, placeholder) {
+    var inp = document.createElement('input');
+    inp.type = 'number'; inp.min = '0'; inp.max = '60'; inp.step = '0.5';
+    inp.placeholder = placeholder;
+    inp.value = val != null ? val : '';
+    inp.style.cssText = 'width:74px;padding:3px 6px;font-size:11px;text-align:center;' +
+        'border:1px solid var(--nb-border);border-radius:4px;font-family:inherit;';
+    return inp;
+}
+
+function _pC_thSmallSt() {
+    return 'padding:5px 10px;font-size:10px;font-weight:700;text-align:center;' +
+        'text-transform:uppercase;letter-spacing:.04em;background:var(--nb-grey-bg);' +
+        'border-bottom:2px solid var(--nb-border);';
+}
+
+function _pC_tdSmallSt() {
+    return 'padding:5px 10px;border-bottom:1px solid var(--nb-border);font-size:12px;';
 }
 
 // ════════════════════════════════════════════════════════════════════════════
