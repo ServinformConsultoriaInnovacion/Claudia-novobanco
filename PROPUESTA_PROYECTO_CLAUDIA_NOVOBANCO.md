@@ -3,7 +3,7 @@
 ## Previsión de Llamadas + AHT → Agentes Necesarios
 
 **Fecha:** 1 de abril de 2026  
-**Versión:** 1.6  
+**Versión:** 1.7  
 **Autor:** PAX Servinform  
 
 ---
@@ -359,33 +359,124 @@ El Panel Previsión es un editor interactivo completo para introducir y visualiz
 
 ---
 
-#### Panel C — Dimensionamiento Erlang C
+#### Panel C — Dimensionamiento Erlang C  *(rediseño v1.7)*
 
-Parámetros globales (aplican a todos los servicios salvo que cada servicio tenga su propio valor configurado en A1):
-
-| Parámetro | "No aplica" | Descripción |
-|---|---|---|
-| SLA objetivo (%) | ✅ | Heredado del servicio; si no aplica, solo calcula tráfico |
-| Tiempo SLA (seg) | ✅ | Umbrales: 20s, 30s, 60s u otro |
-| Tasa de abandono (%) | ✅ | Reduce la demanda antes de Erlang C |
-| AHT global (seg) | ✅ | Sobreescribe el AHT de la previsión si se activa |
-| Shrinkage PVD (%) | ✅ | Del convenio (se sincroniza con Panel A2) |
-| Shrinkage operativo (%) | ✅ | Global o por mes |
-| Absentismo (%) | ✅ | Global o por mes |
-
-Shrinkage mensual: tabla editable con operativo + absentismo por mes, con columna de factor neto calculado automáticamente. "No aplica" por mes → usa valor global.
-
-**Flujo de cálculo:** llamadas × (1 - % abandono) → Erlang C (llamadas/hora, AHT, N agentes) → SLA real = $1 - P_w \cdot e^{-(N-A)/\mu \cdot t}$
-
-**Visualización en UI (sin descargar):**
-- Tabla principal: `fecha | franja | llamadas | abandono | AHT | FTE calculado`
-- Tarjetas de resumen: FTE pico, FTE promedio, llamadas/día media, total periodo
-- Selector de vista: por día / agregado por semana / agregado por mes
-- Todo visible en pantalla antes de cualquier descarga
+El panel de dimensionamiento es el **núcleo de la aplicación**. Se divide en dos vistas relacionadas que comparten los mismos datos calculados.
 
 ---
 
-#### Panel D — Análisis NDA / NDS + What-If  *(juntos en el mismo panel)*
+##### C1 — Tabla de Necesidad por Servicio
+
+La vista principal es una **tabla de doble entrada**: días en filas (columna izquierda) y franjas horarias en columnas (cabecera superior). Para cada celda se muestran en apilado:
+
+```
+┌────────────┬─────────┬─────────┬─────────┬─────────┐
+│  Fecha/Día │  08:00  │  08:30  │  09:00  │  09:30  │ …
+├────────────┼─────────┼─────────┼─────────┼─────────┤
+│ Lun 01/04  │  47 llam│  52 llam│  61 llam│  58 llam│
+│            │ AHT 195s│ AHT 201s│ AHT 198s│ AHT 194s│
+│            │  FTE  9 │  FTE 11 │  FTE 13 │  FTE 12 │
+├────────────┼─────────┼─────────┼─────────┼─────────┤
+│ Mar 02/04  │  44 llam│  50 llam│  63 llam│  55 llam│
+│            │ AHT 193s│ AHT 207s│ AHT 196s│ AHT 200s│
+│            │  FTE  9 │  FTE 10 │  FTE 13 │  FTE 11 │
+└────────────┴─────────┴─────────┴─────────┴─────────┘
+```
+
+- El FTE de cada celda es el resultado de Erlang C con abandono ya aplicado
+- Selector de servicio: per-servicio o vista aggregada (suma de FTEs)
+- Selector de vista temporal: día concreto / semana / rango personalizado
+- Coloreado condicional de FTEs: verde=holgura vs media, rojo=pico crítico
+- Fila de totales/promedios al final
+
+**Controles superiores al cálculo (parámetros globales del panel):**
+
+| Parámetro | Fuente por defecto | "No aplica" |
+|---|---|---|
+| SLA objetivo (%) | Heredado del servicio (Panel A1) | ✅ → solo calcula tráfico |
+| Tiempo SLA (seg) | Heredado del servicio | ✅ |
+| Tasa de abandono (%) | Heredado del servicio | ✅ → no reduce demanda |
+| AHT global (seg) | Previsión (por franja) | ✅ → usa AHT de Panel B |
+| Shrinkage PVD (%) | Panel A2 (convenio) | ✅ |
+| Shrinkage operativo (%) | Global o por mes | ✅ |
+| Absentismo (%) | Global o por mes | ✅ |
+
+**Tabla de shrinkage mensual** (inspirada en Pepephone, pero integrada en el State del servicio):
+- Una fila por mes del periodo de la previsión
+- Columnas: Mes | Shrink. Oper. (%) | Absentismo (%) | **Factor neto** (calculado)
+- Factor neto = $(1 - pvd)(1 - oper)(1 - abs)$ — producto, no suma
+- "No aplica" por mes → hereda valor global
+- Si el factor neto < 65% se marca en rojo, 65–72% naranja, ≥72% verde
+
+> ⚠️ **Decisión de diseño confirmada:** el shrinkage se calcula siempre como **producto encadenado**, no como suma de porcentajes.
+
+**Fórmula de cálculo paso a paso:**
+
+1. `llamadas_efectivas = llamadas_brutas × (1 − tasaAbandono/100)`
+2. `λ_hora = llamadas_efectivas × (60 / granularidadMin)`
+3. `A (Erlangs) = λ_hora × AHT / 3600`
+4. Iterar `N = ⌈A⌉, ⌈A⌉+1, ...` hasta:
+   - `SLA(N) = 1 − P_w · e^{−(N−A)·μ·t_{SLA}} ≥ slaObjetivo`
+   - **Y** `A/N ≤ ocupacionMax`
+5. `factorNeto = (1 − pvd)(1 − oper)(1 − abs)` — mensual diferenciado
+6. `agentesPlantilla = ⌈N / factorNeto⌉` — cuántos contratar para tener N en puesto
+
+**Tarjetas KPI** debajo de la tabla:
+- FTE pico del periodo · FTE promedio · Total llamadas · Franjas calculadas · Factor neto por mes (rango)
+
+---
+
+##### C2 — Cuadrante de Planificación
+
+La segunda vista del panel muestra el **cuadrante operativo**: quién trabaja qué día y en qué franja.
+
+```
+┌──────────────────┬───────┬───────┬───────┬───────┬───────┬───────┬───────┐
+│ Gestor           │ Lun   │ Mar   │ Mié   │ Jue   │ Vie   │ Sáb   │ Dom   │
+│                  │ 01/04 │ 02/04 │ 03/04 │ 04/04 │ 05/04 │ 06/04 │ 07/04 │
+├──────────────────┼───────┼───────┼───────┼───────┼───────┼───────┼───────┤
+│ García, Ana      │  M    │  M    │  M    │  M    │  M    │  L    │  L    │
+│ López, Carlos    │  T    │  T    │  T    │  T    │  T    │  T    │  L    │
+│ Martín, Eva      │  L    │  M    │  M    │  M    │  M    │  L    │  L    │
+│ Ruiz, Pedro      │  M    │  M    │  T    │  T    │  T    │  L    │  L    │
+└──────────────────┴───────┴───────┴───────┴───────┴───────┴───────┴───────┘
+  Pies de col:       9 ag   10 ag  11 ag   11 ag   10 ag   3 ag   2 ag
+                     ✅     ✅      ✅       ✅      ✅      🟡     🔴
+```
+
+Códigos de turno: `M` mañana · `T` tarde · `C` central · `N` noche · `L` libranza · `VAC` vacaciones · `IT` IT · `DLF` día libre festivo · `FEST` festivo trabajado
+
+- Fila de **pie de columna** por día: agentes disponibles vs FTE necesario → semáforo
+- Navegación por semana / mes con botones anterior/siguiente
+- Filtro por servicio (solo muestra los gestores asignados a ese servicio)
+- Cuadro de cobertura: verde si agentes_disponibles ≥ FTE_necesario, naranja si ±20%, rojo si déficit > 20%
+
+**Rotación FDS como regla de excepción** (decisión de diseño v1.7):
+
+> En lugar de un parámetro global "% de agentes que trabajan FDS", la cobertura de fines de semana **se modela mediante reglas de excepción** del motor F1–F6:
+>
+> - Se crea una regla con filtro `tiposTurno: ['fds']` o `filtro.agentes: [lista]`
+> - El parámetro `patronFds` (ej. `1 cada 3`) define la frecuencia de trabajo en FDS
+> - El parámetro `fdsAlMes` (ej. `2`) limita los FDS trabajados al mes
+> - La lista de reglas determina exactamente qué grupo trabaja cuánto FDS
+>
+> Esto permite reglas diferenciadas: "los 5 agentes de guardia trabajan 1 de cada 2 FDS; los 10 agentes de turno estándar trabajan 1 de cada 3".
+
+---
+
+##### C3 — Parámetros de rotación FDS en la regla de excepción
+
+Los parámetros que controlan la cobertura FDS ya existen en el modelo de regla (`parametros.rotacion`):
+
+| Parámetro | Tipo | Ejemplo | Efecto en cuadrante |
+|---|---|---|---|
+| `patronFds` | Select | `1 cada 3` | El gestor trabaja 1 FDS de cada 3 disponibles |
+| `fdsAlMes` | Número | `2` | Cap: máximo 2 FDS trabajados al mes |
+| `diasTrabajo` | Toggle L–D | `[6, 0]` | Solo trabaja sábado y domingo (FDS puro) |
+
+La combinación de estos tres parámetros en una regla filtrada por grupo define completamente el modelo de cobertura FDS sin necesidad de ningún parámetro global adicional.
+
+---
 
 Este panel combina tres elementos que se retroalimentan: la visualización del análisis, las gráficas y el simulador what-if.
 
@@ -1070,16 +1161,18 @@ Entrada: agente  { svcId, tipoTurno, estado, contrato, grupoPro, sede, antigueda
 | B2 · Editor Previsión (tabla + gráfico + edición masiva) | ✅ (ver §3.5.B2) |
 | B3 · Análisis Staff | ✅ |
 
-### Módulos C–F — Pendientes
+### Módulos C–F — En desarrollo
 
-| Panel | Estado |
-|---|---|
-| C · Dimensionamiento Erlang C | ⏳ |
-| D · NDA/NDS + Gráfico + What-If | ⏳ |
-| E · Capacidad + Cuadrante | ⏳ |
-| F · Exportación Excel | ⏳ |
+| Panel | Estado | Notas |
+|---|---|---|
+| C1 · Tabla necesidad (llamadas+AHT+FTE por día×franja) | ⏳ pendiente | Ver diseño §3.5.C1. Motor erlang.js listo pero con bugs pendientes |
+| C2 · Cuadrante de planificación (gestor×día) | ⏳ pendiente | Ver diseño §3.5.C2 |
+| C · Correcciones técnicas pendientes | ⏳ | Shrinkage como producto (no suma); abandono pre-Erlang; shrinkage mensual diferenciado |
+| D · NDA/NDS + Gráfico + What-If | ⏳ pendiente | Requiere C completado |
+| E · Capacidad + Cuadrante anual | ⏳ pendiente | Requiere D |
+| F · Exportación Excel | ⏳ pendiente | Requiere C-E |
 
 ---
 
 *Claudia novobanco · PAX Servinform · 2026*  
-*Propuesta v1.5 — Actualizada con estado real de implementación.*
+*Propuesta v1.7 — Diseño detallado Panel C (C1 tabla, C2 cuadrante, C3 reglas FDS). Correcciones técnicas pendientes documentadas.*
