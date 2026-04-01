@@ -425,11 +425,14 @@ function _pC_renderResultados(zona, res) {
                 'margin-bottom:-2px;white-space:nowrap;';
         });
         tabContent.innerHTML = '';
-        if (id === 'c1') _pC_renderTablaC1(tabContent, res);
-        else             _pC_renderCuadrante(tabContent);
+        if      (id === 'c1') _pC_renderTablaC1(tabContent, res);
+        else if (id === 'c2') _pC_renderTablaC2(tabContent, res);
+        else                  _pC_renderCuadrante(tabContent, res);
     }
 
-    [{ id:'c1', label:'📊 Tabla días × franjas' }, { id:'c2', label:'🗓 Cuadrante de planificación' }]
+    [{ id:'c1', label:'📊 C1 · Dimensionamiento ideal' },
+     { id:'c2', label:'⚖️ C2 · Requerido vs staff' },
+     { id:'c3', label:'🗓 C3 · Cuadrante gestor×día' }]
     .forEach(function(t) {
         var btn = document.createElement('button');
         btn.textContent  = t.label;
@@ -601,18 +604,513 @@ function _pC_renderTablaC1(zona, res) {
     zona.appendChild(ley);
 }
 
-// ── C2: Cuadrante (stub) ──────────────────────────────────────────────────
+// ── C2: Requerido vs staff disponible ────────────────────────────────────
 
-function _pC_renderCuadrante(zona) {
-    zona.innerHTML =
-        '<div style="padding:48px 20px;text-align:center;color:var(--nb-text-light);">' +
-        '<div style="font-size:40px;margin-bottom:14px;">🗓</div>' +
-        '<div style="font-size:14px;font-weight:700;color:var(--nb-text);margin-bottom:8px;">Cuadrante de planificación</div>' +
-        '<div style="font-size:12px;max-width:420px;margin:0 auto;line-height:1.7;">' +
-        'Mostrará <strong>gestor × día</strong> con turno asignado y semáforo de cobertura vs FTE necesario.<br>' +
-        'Requiere: staff cargado (Panel B) + dimensionamiento calculado (C1).<br>' +
-        '<em>Próxima fase de implementación.</em>' +
-        '</div></div>';
+/**
+ * Devuelve true si el agente cubre la franja HH:MM en el día de semana indicado.
+ * Revisa los 4 segmentos inicio/fin del agente.
+ * diasSemana: 0=Dom, 1=Lun…6=Sáb
+ */
+function _pC_cubreFranja(agente, franjaHHMM, diaSemana) {
+    // Determinar si el agente trabaja ese día según su tipo de turno
+    var t = (agente.tipoTurno || '').toUpperCase();
+    var esFDS = (diaSemana === 0 || diaSemana === 6);
+    // Si tiene disponibilidad NF sólo trabaja L-V; 7D cualquier día
+    var disp = (agente.disponibilidad || 'NF').toUpperCase();
+    if (disp !== '7D' && esFDS) return false;
+    // Turnos explícitamente de FDS no cubren L-V
+    if ((t === 'FDS' || t === 'FINDE') && !esFDS) return false;
+
+    // Comprobar si la franja cae en alguno de los segmentos horarios
+    var segmentos = [
+        { ini: agente.inicioTurno,  fin: agente.finTurno  },
+        { ini: agente.inicioTurno2, fin: agente.finTurno2 },
+        { ini: agente.inicioTurno3, fin: agente.finTurno3 },
+        { ini: agente.inicioTurno4, fin: agente.finTurno4 }
+    ];
+    for (var si = 0; si < segmentos.length; si++) {
+        var seg = segmentos[si];
+        if (!seg.ini || !seg.fin) continue;
+        // Comparación lexicográfica HH:MM es suficiente para rango intradiario
+        if (franjaHHMM >= seg.ini && franjaHHMM < seg.fin) return true;
+    }
+    return false;
+}
+
+function _pC_renderTablaC2(zona, res) {
+    var DIAS_C = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+
+    // Reusar el mismo pivot que C1
+    var pivot      = {};
+    var fechasSet  = {};
+    var franjasSet = {};
+    res.filas.forEach(function(f) {
+        fechasSet[f.fecha]   = true;
+        franjasSet[f.franja] = true;
+        if (!pivot[f.fecha]) pivot[f.fecha] = {};
+        if (!pivot[f.fecha][f.franja]) pivot[f.fecha][f.franja] = { requerido: 0 };
+        pivot[f.fecha][f.franja].requerido += f.agentes;
+    });
+    var fechas  = Object.keys(fechasSet).sort();
+    var franjas = Object.keys(franjasSet).sort();
+
+    // Staff activo con inicioTurno definido
+    var staffActivo = State.staff.activos.filter(function(a) { return !!a.inicioTurno; });
+    var hayStaff    = staffActivo.length > 0;
+
+    if (!hayStaff) {
+        var aviso = document.createElement('div');
+        aviso.style.cssText = 'background:#fff3cd;border:1px solid #ffc107;border-radius:6px;' +
+            'padding:14px 18px;margin-bottom:14px;font-size:12px;color:#856404;';
+        aviso.innerHTML = '⚠️ No hay staff activo cargado con horarios definidos. ' +
+            'Carga el fichero de plantilla en el <strong>Panel Staff</strong> para ver el cruce.';
+        zona.appendChild(aviso);
+    }
+
+    // Calcular disponibles por fecha+franja
+    var dispMap = {};  // fecha → franja → nDisponibles
+    fechas.forEach(function(fecha) {
+        var d   = new Date(fecha + 'T00:00:00');
+        var dia = d.getDay();  // 0=Dom…6=Sáb
+        dispMap[fecha] = {};
+        franjas.forEach(function(fr) {
+            if (!hayStaff) { dispMap[fecha][fr] = null; return; }
+            var n = 0;
+            staffActivo.forEach(function(a) {
+                if (_pC_cubreFranja(a, fr, dia)) n++;
+            });
+            dispMap[fecha][fr] = n;
+        });
+    });
+
+    // Contruir tabla
+    var wrap = document.createElement('div');
+    wrap.style.cssText = 'overflow:auto;border:1px solid var(--nb-border);border-radius:6px;' +
+        'max-height:calc(100vh - 400px);margin-bottom:10px;';
+
+    var tbl = document.createElement('table');
+    tbl.style.cssText = 'border-collapse:collapse;font-size:11px;white-space:nowrap;';
+
+    // Cabecera
+    var thead = document.createElement('thead');
+    var trH = document.createElement('tr');
+    var thEsq = document.createElement('th');
+    thEsq.innerHTML = 'Fecha<br><span style="font-size:9px;font-weight:400;color:var(--nb-text-light);">Req / Disp / Δ</span>';
+    thEsq.style.cssText = _pC_thSt(true, true) + 'min-width:110px;z-index:4;';
+    trH.appendChild(thEsq);
+    franjas.forEach(function(fr) {
+        var th = document.createElement('th');
+        th.textContent = fr;
+        th.style.cssText = _pC_thSt(false, true) + 'text-align:center;min-width:68px;';
+        trH.appendChild(th);
+    });
+    thead.appendChild(trH);
+    tbl.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    fechas.forEach(function(fecha, iFecha) {
+        var d   = new Date(fecha + 'T00:00:00');
+        var dia = d.getDay();
+        var diaN  = DIAS_C[dia];
+        var esFDS = (dia === 0 || dia === 6);
+        var bgFila = esFDS ? '#eff6ff' : (iFecha % 2 === 0 ? '#fff' : 'var(--nb-grey-bg)');
+
+        var tr = document.createElement('tr');
+
+        // Columna fecha sticky
+        var tdF = document.createElement('td');
+        tdF.style.cssText = 'position:sticky;left:0;z-index:2;' +
+            'background:' + (esFDS ? '#dbeafe' : 'var(--nb-grey-bg)') + ';' +
+            'padding:4px 8px;border-bottom:1px solid var(--nb-border);' +
+            'border-right:2px solid var(--nb-border);min-width:110px;';
+        tdF.innerHTML =
+            '<span style="font-size:9px;font-weight:600;color:' +
+            (esFDS ? '#1e40af' : 'var(--nb-text-light)') + ';">' + diaN + '</span>' +
+            '<br><span style="font-size:12px;font-weight:700;">' +
+            fecha.slice(8) + '/' + fecha.slice(5,7) + '</span>';
+        tr.appendChild(tdF);
+
+        franjas.forEach(function(fr) {
+            var cel  = pivot[fecha] && pivot[fecha][fr];
+            var td   = document.createElement('td');
+            td.style.cssText = 'padding:3px 4px;border-bottom:1px solid var(--nb-border);' +
+                'border-right:1px solid var(--nb-border);text-align:center;' +
+                'vertical-align:middle;background:' + bgFila + ';';
+
+            if (!cel || cel.requerido === 0) {
+                td.innerHTML = '<span style="color:var(--nb-border);font-size:10px;">—</span>';
+            } else {
+                var req  = cel.requerido;
+                var disp = dispMap[fecha][fr];
+                var delta = disp !== null ? (disp - req) : null;
+
+                var bgCell = '#fff';
+                var colorDelta = 'var(--nb-text)';
+                if (delta !== null) {
+                    if      (delta >= 0)           { bgCell = '#dcfce7'; colorDelta = '#166534'; }
+                    else if (delta >= -Math.round(req * 0.2)) { bgCell = '#fef9c3'; colorDelta = '#854d0e'; }
+                    else                            { bgCell = '#fecaca'; colorDelta = '#991b1b'; }
+                }
+                td.style.background = bgCell;
+
+                var dispTxt = disp !== null ? String(disp) : '?';
+                var deltaTxt = delta !== null
+                    ? (delta >= 0 ? '+' + delta : String(delta))
+                    : '?';
+
+                td.innerHTML =
+                    '<div style="font-size:9px;color:var(--nb-text-light);line-height:1.6;">' +
+                        'Req: <strong>' + req + '</strong>' +
+                    '</div>' +
+                    '<div style="font-size:9px;color:var(--nb-text-light);line-height:1.6;">' +
+                        'Disp: <strong>' + dispTxt + '</strong>' +
+                    '</div>' +
+                    '<div style="font-size:13px;font-weight:800;line-height:1.6;color:' + colorDelta + ';">' +
+                        deltaTxt +
+                    '</div>';
+            }
+            tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+    });
+    tbl.appendChild(tbody);
+    wrap.appendChild(tbl);
+    zona.appendChild(wrap);
+
+    // Leyenda
+    var ley = document.createElement('div');
+    ley.style.cssText = 'display:flex;flex-wrap:wrap;gap:12px;font-size:10px;color:var(--nb-text-light);align-items:center;margin-top:4px;';
+    ley.innerHTML =
+        '<span style="font-weight:700;">Δ = Disponibles − Requeridos:</span>' +
+        '<span style="background:#dcfce7;padding:1px 6px;border-radius:3px;color:#166534;">≥ 0 superávit</span>' +
+        '<span style="background:#fef9c3;padding:1px 6px;border-radius:3px;color:#854d0e;">déficit ≤ 20%</span>' +
+        '<span style="background:#fecaca;padding:1px 6px;border-radius:3px;color:#991b1b;">déficit > 20%</span>' +
+        '<span style="margin-left:8px;">Disponibles = agentes activos cuyo turno horario cubre esa franja ese día</span>';
+    zona.appendChild(ley);
+}
+
+// ── C3: Cuadrante gestor × día ─────────────────────────────────────────────
+
+function _pC_renderCuadrante(zona, res) {
+    var DIAS_C  = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+    var DIAS_ES = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+
+    // Estado de semana navegable
+    if (!zona._semOffset) zona._semOffset = 0;
+
+    // Calcular fechas de la semana (Lun‥Dom) según offset de semanas desde hoy
+    function semanaDe(offset) {
+        var hoy  = new Date();
+        var diaH = hoy.getDay() || 7;  // 1=Lun…7=Dom
+        var lun  = new Date(hoy);
+        lun.setDate(hoy.getDate() - (diaH - 1) + offset * 7);
+        var dias = [];
+        for (var i = 0; i < 7; i++) {
+            var d = new Date(lun);
+            d.setDate(lun.getDate() + i);
+            dias.push(d);
+        }
+        return dias;
+    }
+
+    function toStr(d) {
+        return d.getFullYear() + '-' +
+            String(d.getMonth() + 1).padStart(2, '0') + '-' +
+            String(d.getDate()).padStart(2, '0');
+    }
+
+    // FTE requerido máximo del día: max(agentes) en todas las franjas de esa fecha
+    var maxReqPorFecha = {};
+    if (res && res.filas) {
+        res.filas.forEach(function(f) {
+            if (!maxReqPorFecha[f.fecha] || f.agentes > maxReqPorFecha[f.fecha])
+                maxReqPorFecha[f.fecha] = f.agentes;
+        });
+    }
+
+    function render() {
+        zona.innerHTML = '';
+        var dias   = semanaDe(zona._semOffset);
+        var staff  = State.staff.todos;
+        var sinStaff = !staff.length;
+
+        if (sinStaff) {
+            zona.innerHTML =
+                '<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;' +
+                'padding:14px 18px;font-size:12px;color:#856404;">' +
+                '⚠️ No hay staff cargado. Ve al <strong>Panel Staff</strong> e importa la plantilla.' +
+                '</div>';
+            return;
+        }
+
+        // Navbar de semana
+        var nav = document.createElement('div');
+        nav.style.cssText = 'display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;';
+
+        var btnPrev = document.createElement('button');
+        btnPrev.textContent = '← Sem. anterior';
+        btnPrev.className   = 'btn';
+        btnPrev.style.cssText = 'font-size:11px;padding:4px 10px;';
+        btnPrev.addEventListener('click', function() { zona._semOffset--; render(); });
+
+        var lblSem = document.createElement('span');
+        lblSem.style.cssText = 'font-size:12px;font-weight:700;color:var(--nb-primary);min-width:200px;text-align:center;';
+        var d0 = dias[0], d6 = dias[6];
+        lblSem.textContent = d0.getDate() + '/' + (d0.getMonth()+1) + ' – ' +
+            d6.getDate() + '/' + (d6.getMonth()+1) + '/' + d6.getFullYear();
+
+        var btnNext = document.createElement('button');
+        btnNext.textContent = 'Sem. siguiente →';
+        btnNext.className   = 'btn';
+        btnNext.style.cssText = 'font-size:11px;padding:4px 10px;';
+        btnNext.addEventListener('click', function() { zona._semOffset++; render(); });
+
+        nav.appendChild(btnPrev);
+        nav.appendChild(lblSem);
+        nav.appendChild(btnNext);
+
+        // Filtro por servicio
+        var selSvc = document.createElement('select');
+        selSvc.style.cssText = 'font-size:11px;padding:3px 8px;border:1px solid var(--nb-border);border-radius:4px;margin-left:auto;';
+        var oTodos = document.createElement('option');
+        oTodos.value = ''; oTodos.textContent = 'Todos los servicios';
+        selSvc.appendChild(oTodos);
+        State.config.servicios.forEach(function(svc) {
+            var o = document.createElement('option');
+            o.value = svc.id; o.textContent = svc.nombre;
+            selSvc.appendChild(o);
+        });
+        selSvc.addEventListener('change', function() {
+            zona._filtroSvc = selSvc.value || null;
+            render();
+        });
+        if (zona._filtroSvc) selSvc.value = zona._filtroSvc;
+        nav.appendChild(selSvc);
+        zona.appendChild(nav);
+
+        // Staff filtrado
+        var staffFiltrado = staff.filter(function(a) {
+            if (zona._filtroSvc && a.servicioId !== zona._filtroSvc) return false;
+            return true;
+        });
+
+        if (!staffFiltrado.length) {
+            zona.innerHTML += '<div style="font-size:12px;color:var(--nb-text-light);padding:20px;">No hay agentes para el filtro seleccionado.</div>';
+            return;
+        }
+
+        // Calcular disponibles por día para el pie de tabla
+        var dispPorDia = dias.map(function(d) {
+            var dia = d.getDay();
+            var n = staffFiltrado.filter(function(a) {
+                if (!a.inicioTurno) return false;
+                return _pC_cubreFranja(a, a.inicioTurno, dia);
+            }).length;
+            return n;
+        });
+
+        // Tabla
+        var wrap = document.createElement('div');
+        wrap.style.cssText = 'overflow:auto;border:1px solid var(--nb-border);border-radius:6px;' +
+            'max-height:calc(100vh - 440px);';
+
+        var tbl = document.createElement('table');
+        tbl.style.cssText = 'border-collapse:collapse;font-size:11px;white-space:nowrap;width:100%;';
+
+        // Cabecera: Agente + 7 días
+        var thead = document.createElement('thead');
+        var trH   = document.createElement('tr');
+        var thAg  = document.createElement('th');
+        thAg.textContent = 'Agente';
+        thAg.style.cssText = _pC_thSt(true, true) + 'min-width:160px;z-index:4;';
+        trH.appendChild(thAg);
+        dias.forEach(function(d) {
+            var dia   = d.getDay();
+            var esFDS = (dia === 0 || dia === 6);
+            var th    = document.createElement('th');
+            th.style.cssText = _pC_thSt(false, true) + 'text-align:center;min-width:80px;' +
+                (esFDS ? 'color:#1e40af;background:#dbeafe;' : '');
+            th.innerHTML = '<span style="font-size:10px;">' + DIAS_C[dia] + '</span><br>' +
+                d.getDate() + '/' + (d.getMonth()+1);
+            trH.appendChild(th);
+        });
+        thead.appendChild(trH);
+        tbl.appendChild(thead);
+
+        var tbody   = document.createElement('tbody');
+        var ESTADOS_AUSENCIA = ['IT','MAT','PAT','LACT','EXC','PR','P.DTO','VAC'];
+
+        staffFiltrado.forEach(function(a, iA) {
+            var tr = document.createElement('tr');
+            tr.style.background = iA % 2 === 0 ? '#fff' : 'var(--nb-grey-bg)';
+
+            // Celda nombre agente (sticky)
+            var tdNom = document.createElement('td');
+            tdNom.style.cssText = 'position:sticky;left:0;z-index:2;background:inherit;' +
+                'padding:5px 10px;border-bottom:1px solid var(--nb-border);' +
+                'border-right:2px solid var(--nb-border);min-width:160px;';
+            tdNom.innerHTML =
+                '<div style="font-size:11px;font-weight:700;">' + (a.codigo || '—') + '</div>' +
+                '<div style="font-size:10px;color:var(--nb-text-light);">' + (a.tipoTurno || '') + '</div>';
+            tr.appendChild(tdNom);
+
+            dias.forEach(function(d) {
+                var fecha  = toStr(d);
+                var dia    = d.getDay();
+                var esFDS  = (dia === 0 || dia === 6);
+                var td     = document.createElement('td');
+                td.style.cssText = 'padding:4px 6px;border-bottom:1px solid var(--nb-border);' +
+                    'border-right:1px solid var(--nb-border);text-align:center;vertical-align:middle;' +
+                    (esFDS ? 'background:#eff6ff;' : '');
+
+                // Determinar estado del agente en esa fecha
+                var codigo   = a.codigo || '';
+                var estadoExt = '';
+                // Vacaciones
+                for (var v = 1; v <= 4; v++) {
+                    var vi = a['inicioVac' + v], vf = a['finVac' + v];
+                    if (vi && vf && fecha >= vi && fecha <= vf) { estadoExt = 'VAC'; break; }
+                }
+                // DLF
+                if (!estadoExt) {
+                    for (var dl = 1; dl <= 6; dl++) {
+                        if (a['dlf' + dl] === fecha) { estadoExt = 'DLF'; break; }
+                    }
+                }
+                // Festivos
+                if (!estadoExt) {
+                    for (var ft = 1; ft <= 6; ft++) {
+                        if (a['fest' + ft] === fecha) { estadoExt = 'FEST'; break; }
+                    }
+                }
+                // IT / Ausencia prolongada
+                if (!estadoExt) {
+                    var estadoBase = (a.estado || '').toUpperCase();
+                    if (ESTADOS_AUSENCIA.indexOf(estadoBase) > -1) {
+                        if (!a.finAusencia || fecha <= a.finAusencia) estadoExt = estadoBase;
+                    }
+                }
+
+                // Color y etiqueta por estado
+                var COLORES_EST = {
+                    'M':    { bg:'#dcfce7', c:'#166534', label:'M' },
+                    'T':    { bg:'#fef9c3', c:'#854d0e', label:'T' },
+                    'N':    { bg:'#1e293b', c:'#f1f5f9', label:'N' },
+                    'P':    { bg:'#e0f2fe', c:'#0c4a6e', label:'P' },
+                    'C':    { bg:'#f3e8ff', c:'#6b21a8', label:'C' },
+                    'VAC':  { bg:'#fbbf24', c:'#fff',    label:'VAC' },
+                    'DLF':  { bg:'#93c5fd', c:'#1e3a8a', label:'DLF' },
+                    'FEST': { bg:'#fda4af', c:'#881337', label:'FST' },
+                    'IT':   { bg:'#d1d5db', c:'#374151', label:'IT'  },
+                    'MAT':  { bg:'#d1d5db', c:'#374151', label:'MAT' },
+                    'L':    { bg:'#f1f5f9', c:'#64748b', label:'L'   }
+                };
+
+                var ttCode, ttBg, ttC;
+                if (estadoExt) {
+                    var est = COLORES_EST[estadoExt] || { bg:'#d1d5db', c:'#374151', label: estadoExt };
+                    ttCode = est.label; ttBg = est.bg; ttC = est.c;
+                } else if (!_pC_cubreFranja(a, a.inicioTurno || '00:00', dia)) {
+                    ttCode = 'L'; ttBg = COLORES_EST['L'].bg; ttC = COLORES_EST['L'].c;
+                } else {
+                    // Código de turno por tipo
+                    var tipoUp = (a.tipoTurno || '').toUpperCase();
+                    var cod = tipoUp === 'TARDE' ? 'T'
+                            : tipoUp === 'NOCHE' ? 'N'
+                            : tipoUp === 'PARTIDO' ? 'P'
+                            : tipoUp === 'COMPACTADO' ? 'C'
+                            : 'M';
+                    var ec = COLORES_EST[cod] || COLORES_EST['M'];
+                    ttCode = ec.label; ttBg = ec.bg; ttC = ec.c;
+                }
+
+                td.innerHTML =
+                    '<span style="display:inline-block;padding:2px 7px;border-radius:4px;' +
+                    'font-size:11px;font-weight:800;background:' + ttBg + ';color:' + ttC + ';">' +
+                    ttCode + '</span>';
+                if (a.inicioTurno && !estadoExt) {
+                    td.innerHTML += '<div style="font-size:9px;color:var(--nb-text-light);margin-top:1px;">' +
+                        a.inicioTurno + '-' + (a.finTurno || '') + '</div>';
+                }
+                tr.appendChild(td);
+            });
+            tbody.appendChild(tr);
+        });
+
+        // Fila pie: FTE disponible vs requerido
+        var trPie = document.createElement('tr');
+        trPie.style.cssText = 'background:var(--nb-grey-bg);font-weight:700;';
+        var tdPieLbl = document.createElement('td');
+        tdPieLbl.style.cssText = 'position:sticky;left:0;z-index:2;background:var(--nb-grey-bg);' +
+            'padding:5px 10px;border-top:2px solid var(--nb-border);border-right:2px solid var(--nb-border);font-size:10px;';
+        tdPieLbl.innerHTML = '<span style="font-size:9px;text-transform:uppercase;letter-spacing:.05em;' +
+            'color:var(--nb-text-light);">Disponibles<br>vs Requerido</span>';
+        trPie.appendChild(tdPieLbl);
+        dias.forEach(function(d, idx) {
+            var fecha  = toStr(d);
+            var dia    = d.getDay();
+            var esFDS  = (dia === 0 || dia === 6);
+            var tdP    = document.createElement('td');
+            tdP.style.cssText = 'padding:5px 6px;border-top:2px solid var(--nb-border);' +
+                'border-right:1px solid var(--nb-border);text-align:center;' +
+                (esFDS ? 'background:#dbeafe;' : '');
+
+            var disp = staffFiltrado.filter(function(a) {
+                if (!a.inicioTurno) return false;
+                var estadoBase = (a.estado || '').toUpperCase();
+                if (['IT','MAT','PAT','LACT','EXC','PR','P.DTO'].indexOf(estadoBase) > -1) return false;
+                // Vacaciones ese día
+                for (var v = 1; v <= 4; v++) {
+                    var vi = a['inicioVac' + v], vf = a['finVac' + v];
+                    if (vi && vf && fecha >= vi && fecha <= vf) return false;
+                }
+                return _pC_cubreFranja(a, a.inicioTurno, dia);
+            }).length;
+
+            var req  = maxReqPorFecha[fecha] || 0;
+            var delta = disp - req;
+            var bgP   = req === 0  ? 'transparent'
+                      : delta >= 0 ? '#dcfce7'
+                      : delta >= -Math.round(req * 0.2) ? '#fef9c3'
+                      : '#fecaca';
+            var cP    = req === 0  ? 'var(--nb-text-light)'
+                      : delta >= 0 ? '#166534'
+                      : delta >= -Math.round(req * 0.2) ? '#854d0e'
+                      : '#991b1b';
+
+            tdP.style.background = bgP;
+            tdP.innerHTML =
+                '<div style="font-size:12px;font-weight:800;color:' + cP + ';">' +
+                    disp + '</div>' +
+                '<div style="font-size:9px;color:var(--nb-text-light);">' +
+                    (req > 0 ? 'req: ' + req : '—') + '</div>';
+            trPie.appendChild(tdP);
+        });
+        tbody.appendChild(trPie);
+        tbl.appendChild(tbody);
+        wrap.appendChild(tbl);
+        zona.appendChild(wrap);
+
+        // Leyenda
+        var ley = document.createElement('div');
+        ley.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;font-size:10px;color:var(--nb-text-light);' +
+            'align-items:center;margin-top:8px;';
+        ley.innerHTML =
+            '<span style="font-weight:700;">Turnos:</span>' +
+            ['M:#dcfce7:#166534:Mañana','T:#fef9c3:#854d0e:Tarde',
+             'N:#1e293b:#f1f5f9:Noche','P:#e0f2fe:#0c4a6e:Partido',
+             'C:#f3e8ff:#6b21a8:Compactado','L:#f1f5f9:#64748b:Libre',
+             'VAC:#fbbf24:#fff:Vacaciones','DLF:#93c5fd:#1e3a8a:DLF',
+             'IT:#d1d5db:#374151:IT/Ausencia'].map(function(s) {
+                var p = s.split(':');
+                return '<span style="background:' + p[1] + ';color:' + p[2] + ';' +
+                    'padding:1px 6px;border-radius:3px;font-weight:700;">' + p[0] + '</span>' +
+                    '<span style="margin-right:4px;">' + p[3] + '</span>';
+            }).join(' ');
+        zona.appendChild(ley);
+    }  // end render()
+
+    render();
 }
 
 // ── Helpers internos de estilo para tablas C ───────────────────────────────
