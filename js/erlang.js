@@ -5,9 +5,13 @@
  * Funciones públicas:
  *   erlangC(llamadasPorHora, ahtSegundos, agentes) → probEspera [0-1]
  *   slaReal(probEspera, agentes, trafico, ahtSegundos, tiempoSlaSegundos) → sla [0-1]
- *   calcularAgentesNecesarios(cfg) → { agentes, slaReal, trafico, ocupacion }
- *   dimensionarFranja(cfg) → resultado completo de una franja
+ *   calcularAgentesNecesarios(cfg) → { agentes, slaAlcanzado, trafico, ocupacion, pw }
  *   dimensionarTodo(opciones) → { filas[], resumen{} }
+ *
+ * Correcciones técnicas (v1.7):
+ *   - Abandono pre-Erlang: llamadas × (1 − tasaAbandono/100) antes de Erlang C
+ *   - Shrinkage como PRODUCTO: (1−pvd)(1−oper)(1−abs) via getFactorNetoDimensionamiento()
+ *   - Shrinkage mensual diferenciado: lee State.dimensionamiento.shrinkageMensual via getter
  */
 
 'use strict';
@@ -169,26 +173,36 @@ function dimensionarTodo(opciones) {
             servicios.forEach(function(svc) {
                 if (opciones.soloServicio && svc.id !== opciones.soloServicio) return;
 
-                var llamadas  = (dataSvcs[svc.id] || 0);
-                var ctx       = { fecha: fecha, franja: franja };
-                var ahtFranja = ((ahtData[fecha] || {})[franja] || {})[svc.id];
+                var llamadasBrutas = (dataSvcs[svc.id] || 0);
+                var ctx            = { fecha: fecha, franja: franja };
+                var ahtFranja      = ((ahtData[fecha] || {})[franja] || {})[svc.id];
 
-                // Getters efectivos F6: resuelven reglas de excepción si las hay
-                // agente = null → reglas sin filtro de staff (p.ej. reglas por servicio)
-                var aht       = getAhtEfectivo(svc, ahtFranja != null ? ahtFranja : null, null, ctx);
-                var shrinkBase  = getShrinkageEfectivo(svc, null, ctx);
-                var shrinkExtra = opciones.shrinkageExtra || 0;
-                var shrinkTotal = shrinkBase + shrinkExtra;
-                var ocupMax     = getOcupacionMaxEfectivo(svc, null, ctx);
-                var slaObj      = getSlaObjetivo(svc);
-                var tiempoSla   = getTiempoSla(svc);
+                // ── Capa 1: AHT efectivo (reglas de excepción > franja > global servicio)
+                var aht = getAhtEfectivo(svc, ahtFranja != null ? ahtFranja : null, null, ctx);
 
-                // Ajustar agentes por shrinkage total
-                var shrinkFactor = shrinkTotal > 0 ? (1 - shrinkTotal / 100) : 1;
-                if (shrinkFactor <= 0) shrinkFactor = 0.01;
+                // ── Capa 2: Abandono pre-Erlang
+                // Las llamadas que se dimensionan son solo las que no abandonarán
+                var tasaAbandono      = getVal(svc.tasaAbandono) || 0;
+                var llamadasEfectivas = tasaAbandono > 0
+                    ? llamadasBrutas * (1 - tasaAbandono / 100)
+                    : llamadasBrutas;
 
+                // ── Capa 3: Parámetros Erlang C
+                var ocupMax   = getOcupacionMaxEfectivo(svc, null, ctx);
+                var slaObj    = getSlaObjetivo(svc);
+                var tiempoSla = getTiempoSla(svc);
+
+                // ── Capa 4: Factor neto de shrinkage (PRODUCTO, no suma)
+                // Incluye: PVD convenio × oper × abs (con override mensual y de reglas)
+                var factorBase  = getFactorNetoDimensionamiento(svc, null, ctx);
+                var extraFactor = (opciones.shrinkageExtra || 0) > 0
+                    ? (1 - (opciones.shrinkageExtra / 100))
+                    : 1;
+                var factorTotal = Math.max(0.01, factorBase * extraFactor);
+
+                // ── Erlang C: agentes base sin shrinkage
                 var res = calcularAgentesNecesarios({
-                    llamadas:    llamadas,
+                    llamadas:    llamadasEfectivas,
                     granMinutos: gran,
                     ahtSegundos: aht,
                     slaObjetivo: slaObj,
@@ -196,31 +210,34 @@ function dimensionarTodo(opciones) {
                     ocupacionMax: ocupMax
                 });
 
-                // Agentes con shrinkage aplicado (redondeando hacia arriba)
-                var agentesConShrink = res.agentes > 0
-                    ? Math.ceil(res.agentes / shrinkFactor)
+                // ── Agentes de plantilla: base / factorNeto → cuántos contratar
+                var agentesPlantilla = res.agentes > 0
+                    ? Math.ceil(res.agentes / factorTotal)
                     : 0;
 
                 var fila = {
-                    fecha:       fecha,
-                    franja:      franja,
-                    servicioId:  svc.id,
-                    servicio:    svc.nombre,
-                    llamadas:    llamadas,
-                    aht:         aht,
-                    trafico:     res.trafico,
-                    agentesBase: res.agentes,
-                    agentes:     agentesConShrink,
-                    sla:         res.slaAlcanzado,
-                    ocupacion:   res.ocupacion,
-                    pw:          res.pw,
-                    shrinkage:   parseFloat(shrinkTotal.toFixed(1))
+                    fecha:             fecha,
+                    franja:            franja,
+                    servicioId:        svc.id,
+                    servicio:          svc.nombre,
+                    llamadas:          llamadasBrutas,
+                    llamadasEfectivas: parseFloat(llamadasEfectivas.toFixed(1)),
+                    tasaAbandono:      tasaAbandono,
+                    aht:               aht,
+                    trafico:           res.trafico,
+                    agentesBase:       res.agentes,
+                    agentes:           agentesPlantilla,
+                    sla:               res.slaAlcanzado,
+                    ocupacion:         res.ocupacion,
+                    pw:                res.pw,
+                    factorNeto:        parseFloat((factorTotal * 100).toFixed(1)),
+                    shrinkage:         parseFloat(((1 - factorTotal) * 100).toFixed(1))
                 };
                 filas.push(fila);
 
-                totales.llamadas   += llamadas;
-                totales.agentesSuma += agentesConShrink;
-                totales.agentesMax  = Math.max(totales.agentesMax, agentesConShrink);
+                totales.llamadas    += llamadasBrutas;
+                totales.agentesSuma += agentesPlantilla;
+                totales.agentesMax   = Math.max(totales.agentesMax, agentesPlantilla);
                 totales.franjas++;
             });
         });

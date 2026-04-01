@@ -82,26 +82,58 @@ function siguienteColorServicio() {
 // ── Getters efectivos con resolución de reglas F6 ─────────────────────────
 
 /**
- * Devuelve el shrinkage efectivo para un servicio + agente en un contexto.
- * Combina shrinkageOper + absentismo del servicio y aplica el override de reglas.
+ * Devuelve el factor neto de disponibilidad para dimensionamiento.
+ * Integra PVD (convenio) × operativo × absentismo como PRODUCTO (no suma).
  *
- * @param {object} svc      Objeto servicio de State.config.servicios[]
- * @param {object|null} agente   Contexto de agente (ver resolverReglasParaAgente)
- * @param {object|null} contexto { fecha, franja }
- * @returns {number} Shrinkage total en % (0-99)
+ * Orden de prioridad:
+ *   1. Regla de excepción activa con parámetro shrinkage
+ *      → override total de oper+abs (pvd del convenio siempre se aplica encima)
+ *   2. Shrinkage mensual diferenciado: State.dimensionamiento.shrinkageMensual['YYYY-MM']
+ *      → override de oper y/o abs para ese mes
+ *   3. Valores del servicio: svc.shrinkageOper + svc.absentismo
+ *
+ * @param {object}      svc       Servicio de State.config.servicios[]
+ * @param {object|null} agente    Contexto del agente (ver resolverReglasParaAgente)
+ * @param {object|null} contexto  { fecha:'YYYY-MM-DD', franja:'HH:MM' }
+ * @returns {number} Factor neto [0.01, 1] — divídelo entre él para obtener plantilla necesaria:
+ *                   agentesPlantilla = ceil(agentesBase / factorNeto)
  */
-function getShrinkageEfectivo(svc, agente, contexto) {
-    // Base del servicio: shrinkageOper + absentismo (si aplican)
-    var base = (getVal(svc.shrinkageOper) || 0) + (getVal(svc.absentismo) || 0);
+function getFactorNetoDimensionamiento(svc, agente, contexto) {
+    // PVD del convenio — siempre se aplica
+    var pvd = (getConvenio('pvdShrinkage') || 0) / 100;
 
-    // Override de reglas
+    // Override de regla de excepción (sustituye oper+abs del servicio/mes)
     var resuelto = resolverReglasParaAgente(agente || null, contexto || null);
     if (resuelto.shrinkage != null) {
-        return Math.min(resuelto.shrinkage, 99);
+        return Math.max(0.01, (1 - pvd) * (1 - resuelto.shrinkage / 100));
     }
 
-    // Sin override: sum Oper + Abs de convenio pvdShrinkage si existe
-    return Math.min(base, 99);
+    // Shrinkage mensual diferenciado
+    var mesKey  = contexto && contexto.fecha ? contexto.fecha.slice(0, 7) : null;
+    var mensual = mesKey ? (State.dimensionamiento.shrinkageMensual[mesKey] || null) : null;
+
+    var oper, abs;
+    if (mensual) {
+        var operVal = getVal(mensual.operativo);
+        var absVal  = getVal(mensual.absentismo);
+        // Si el mes tiene override úsalo; si no, cae al valor del servicio
+        oper = ((operVal != null ? operVal : (getVal(svc.shrinkageOper) || 0))) / 100;
+        abs  = ((absVal  != null ? absVal  : (getVal(svc.absentismo)    || 0))) / 100;
+    } else {
+        oper = (getVal(svc.shrinkageOper) || 0) / 100;
+        abs  = (getVal(svc.absentismo)    || 0) / 100;
+    }
+
+    return Math.max(0.01, (1 - pvd) * (1 - oper) * (1 - abs));
+}
+
+/**
+ * @deprecated Usar getFactorNetoDimensionamiento — devuelve factor (0-1), no %.
+ * Mantenido como alias para compatibilidad si hubiera llamadas externas.
+ */
+function getShrinkageEfectivo(svc, agente, contexto) {
+    var f = getFactorNetoDimensionamiento(svc, agente, contexto);
+    return parseFloat(((1 - f) * 100).toFixed(2));
 }
 
 /**
@@ -150,7 +182,6 @@ function getSlaObjetivo(svc) {
  * @returns {number}
  */
 function getTiempoSla(svc) {
-    // Si tiempoSla es {valor,noAplica}, usa getVal; si es número plano, devolverlo directamente
     if (svc.tiempoSla != null && typeof svc.tiempoSla === 'object') {
         return getVal(svc.tiempoSla) || 20;
     }
