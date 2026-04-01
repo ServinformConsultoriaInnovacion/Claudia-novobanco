@@ -151,6 +151,8 @@ function crearReglaExcepcion(nombre) {
             agentes:         [],   // codigos individuales []
             antiguedadMin:   null,
             antiguedadMax:   null,
+            meses:           [],   // [1..12] — vacío = todos los meses
+            semanas:         [],   // ISO weeks [1..53] — vacío = todas las semanas
             franjas:         null  // null | { desde:'HH:MM', hasta:'HH:MM', dias:[0..6] }
         },
 
@@ -242,6 +244,9 @@ function _normalizarRegla(regla) {
         });
         if (!Array.isArray(regla.parametros.extras)) regla.parametros.extras = [];
     }
+    // Campos de filtro de fecha/periodo (añadidos en F7)
+    if (!Array.isArray(regla.filtro.meses))   regla.filtro.meses   = [];
+    if (!Array.isArray(regla.filtro.semanas)) regla.filtro.semanas = [];
     return regla;
 }
 
@@ -296,6 +301,18 @@ function _fechaHoy() {
 }
 
 /**
+ * Devuelve el número de semana ISO 8601 (1–53) de una fecha YYYY-MM-DD.
+ * Lunes = primer día de la semana ISO.
+ */
+function _isoSemana(fechaStr) {
+    var d = new Date(fechaStr + 'T00:00:00');
+    // Ir al jueves de la semana actual (semana ISO se define por su jueves)
+    d.setDate(d.getDate() + 4 - (d.getDay() || 7));
+    var inicioAnio = new Date(d.getFullYear(), 0, 1);
+    return Math.ceil(((d - inicioAnio) / 86400000 + 1) / 7);
+}
+
+/**
  * Evalúa si la regla aplica al agente dado.
  * Dimensión vacía (array vacío / null) = SIEMPRE pasa.
  * Si agente es null, solo pasan las reglas cuyo filtro está completamente vacío.
@@ -331,6 +348,18 @@ function _filtrarReglaContraAgente(filtro, agente, contexto) {
             var diaSemana = new Date(contexto.fecha + 'T00:00:00').getDay();
             if (f.dias.indexOf(diaSemana) === -1) return false;
         }
+    }
+
+    // Mes del contexto [1..12]
+    if (filtro.meses && filtro.meses.length > 0 && contexto && contexto.fecha) {
+        var mes = new Date(contexto.fecha + 'T00:00:00').getMonth() + 1;  // 1-based
+        if (filtro.meses.indexOf(mes) === -1) return false;
+    }
+
+    // Semana ISO del contexto [1..53]
+    if (filtro.semanas && filtro.semanas.length > 0 && contexto && contexto.fecha) {
+        var semIso = _isoSemana(contexto.fecha);
+        if (filtro.semanas.indexOf(semIso) === -1) return false;
     }
 
     return true;

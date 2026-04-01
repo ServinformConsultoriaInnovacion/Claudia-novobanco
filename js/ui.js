@@ -971,14 +971,19 @@ function _rRegla_generarTooltip(regla) {
 
     // Filtros
     var filtros = [];
+    var _NM = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
     if (regla.filtro.servicios.length)  filtros.push('Servicio: ' + regla.filtro.servicios.join(', '));
     if (regla.filtro.tiposTurno.length) filtros.push('Turno: '    + regla.filtro.tiposTurno.join(', '));
     if (regla.filtro.estados.length)    filtros.push('Estado: '   + regla.filtro.estados.join(', '));
     if (regla.filtro.sedes.length)      filtros.push('Sede: '     + regla.filtro.sedes.join(', '));
     if (regla.filtro.agentes.length)    filtros.push(regla.filtro.agentes.length + ' agente(s) individual(es)');
+    if (regla.filtro.meses && regla.filtro.meses.length)
+        filtros.push('Meses: ' + regla.filtro.meses.map(function(m) { return _NM[m-1]; }).join(', '));
+    if (regla.filtro.semanas && regla.filtro.semanas.length)
+        filtros.push('Semanas ISO: ' + regla.filtro.semanas.map(function(s) { return 'S'+s; }).join(', '));
     lineas.push(filtros.length
         ? '🎯 Aplica a: ' + filtros.join(' | ')
-        : '🌐 Aplica a todo el staff');
+        : '🌐 Aplica a todo el staff en toda la vigencia');
     lineas.push('');
 
     // Parámetros de cálculo base
@@ -1584,15 +1589,145 @@ function _rRegla_seccionFiltros(regla) {
     filaAgentes.appendChild(wrapAg);
     sec.appendChild(filaAgentes);
 
+    // ── Filtro por mes ─────────────────────────────────────────────────
+    var NOMBRES_MESES_CORTOS = ['Ene','Feb','Mar','Abr','May','Jun',
+                                'Jul','Ago','Sep','Oct','Nov','Dic'];
+    var _filaMeses = document.createElement('div');
+    _filaMeses.style.cssText = 'display:flex;align-items:flex-start;gap:8px;margin-bottom:7px;';
+    var _lblMeses = document.createElement('span');
+    _lblMeses.textContent = 'Mes';
+    _lblMeses.style.cssText = 'font-size:11px;color:var(--nb-text-light);width:90px;flex-shrink:0;padding-top:4px;';
+    var _wrapMeses = document.createElement('div');
+    _wrapMeses.style.cssText = 'flex:1;display:flex;flex-wrap:wrap;gap:4px;';
+    NOMBRES_MESES_CORTOS.forEach(function(nombre, i) {
+        var num = i + 1;
+        var btn = document.createElement('button');
+        btn.textContent = nombre;
+        btn.title = 'Mes ' + num;
+        var activo = regla.filtro.meses.indexOf(num) > -1;
+        btn.style.cssText = 'padding:2px 7px;font-size:10px;border-radius:12px;cursor:pointer;' +
+            'border:1px solid ' + (activo ? 'var(--nb-primary)' : 'var(--nb-border)') + ';' +
+            'background:' + (activo ? 'var(--nb-primary)' : '#fff') + ';' +
+            'color:' + (activo ? '#fff' : 'var(--nb-text-light)') + ';font-weight:600;';
+        btn.addEventListener('click', function() {
+            var idx = regla.filtro.meses.indexOf(num);
+            if (idx > -1) regla.filtro.meses.splice(idx, 1);
+            else regla.filtro.meses.push(num);
+            var a2 = regla.filtro.meses.indexOf(num) > -1;
+            btn.style.background  = a2 ? 'var(--nb-primary)' : '#fff';
+            btn.style.borderColor = a2 ? 'var(--nb-primary)' : 'var(--nb-border)';
+            btn.style.color       = a2 ? '#fff'              : 'var(--nb-text-light)';
+            programarGuardado();
+        });
+        _wrapMeses.appendChild(btn);
+    });
+    _filaMeses.appendChild(_lblMeses);
+    _filaMeses.appendChild(_wrapMeses);
+    sec.appendChild(_filaMeses);
+
+    // ── Filtro por semana ISO ──────────────────────────────────────────
+    var _filaSems = document.createElement('div');
+    _filaSems.style.cssText = 'display:flex;align-items:flex-start;gap:8px;margin-bottom:7px;';
+    var _lblSems = document.createElement('span');
+    _lblSems.textContent = 'Semana ISO';
+    _lblSems.style.cssText = 'font-size:11px;color:var(--nb-text-light);width:90px;flex-shrink:0;padding-top:4px;';
+    var _wrapSems = document.createElement('div');
+    _wrapSems.style.cssText = 'flex:1;display:flex;flex-direction:column;gap:4px;';
+
+    // Subrow de controles rápidos
+    var _semControls = document.createElement('div');
+    _semControls.style.cssText = 'display:flex;align-items:center;gap:6px;flex-wrap:wrap;';
+
+    // Input numérico + botón Añadir
+    var _inpSem = document.createElement('input');
+    _inpSem.type = 'number'; _inpSem.min = '1'; _inpSem.max = '53';
+    _inpSem.placeholder = 'Sem. 1-53';
+    _inpSem.style.cssText = 'width:80px;padding:3px 6px;font-size:11px;border:1px solid var(--nb-border);border-radius:4px;';
+    _semControls.appendChild(_inpSem);
+
+    var _btnAddSem = document.createElement('button');
+    _btnAddSem.textContent = '+ Añadir';
+    _btnAddSem.style.cssText = 'padding:3px 8px;font-size:11px;border-radius:4px;cursor:pointer;' +
+        'border:1px solid var(--nb-primary);background:var(--nb-primary);color:#fff;font-weight:600;';
+
+    var _semChips; // referencia al contenedor de chips (definido más abajo)
+
+    _btnAddSem.addEventListener('click', function() {
+        var v = parseInt(_inpSem.value, 10);
+        if (isNaN(v) || v < 1 || v > 53) return;
+        if (regla.filtro.semanas.indexOf(v) === -1) {
+            regla.filtro.semanas.push(v);
+            regla.filtro.semanas.sort(function(a, b) { return a - b; });
+            _refrescarSemChips();
+            programarGuardado();
+        }
+        _inpSem.value = '';
+    });
+    _semControls.appendChild(_btnAddSem);
+
+    // Botón "Todo el año" (semanas 1–52)
+    var _btnTodoAnio = document.createElement('button');
+    _btnTodoAnio.textContent = 'Limpiar';
+    _btnTodoAnio.title = 'Quitar todas las semanas seleccionadas';
+    _btnTodoAnio.style.cssText = 'padding:3px 8px;font-size:11px;border-radius:4px;cursor:pointer;' +
+        'border:1px solid var(--nb-border);background:#fff;color:var(--nb-text-light);';
+    _btnTodoAnio.addEventListener('click', function() {
+        regla.filtro.semanas.length = 0;
+        _refrescarSemChips();
+        programarGuardado();
+    });
+    _semControls.appendChild(_btnTodoAnio);
+
+    _wrapSems.appendChild(_semControls);
+
+    // Chips de semanas seleccionadas
+    _semChips = document.createElement('div');
+    _semChips.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;min-height:18px;';
+
+    function _refrescarSemChips() {
+        _semChips.innerHTML = '';
+        if (regla.filtro.semanas.length === 0) {
+            var vacio = document.createElement('span');
+            vacio.textContent = '— toda la vigencia (sin filtro de semana)';
+            vacio.style.cssText = 'font-size:10px;color:var(--nb-text-light);font-style:italic;line-height:22px;';
+            _semChips.appendChild(vacio);
+            return;
+        }
+        regla.filtro.semanas.forEach(function(sem) {
+            var chip = document.createElement('span');
+            chip.style.cssText = 'display:inline-flex;align-items:center;gap:3px;padding:2px 7px;' +
+                'border-radius:12px;background:var(--nb-primary);color:#fff;font-size:10px;font-weight:600;cursor:default;';
+            chip.innerHTML = 'S' + sem +
+                '<button style="background:none;border:none;color:#fff;cursor:pointer;' +
+                'font-size:11px;line-height:1;padding:0 0 0 2px;" title="Quitar semana ' + sem + '">×</button>';
+            chip.querySelector('button').addEventListener('click', function() {
+                var i = regla.filtro.semanas.indexOf(sem);
+                if (i > -1) regla.filtro.semanas.splice(i, 1);
+                _refrescarSemChips();
+                programarGuardado();
+            });
+            _semChips.appendChild(chip);
+        });
+    }
+    _refrescarSemChips();
+
+    _wrapSems.appendChild(_semChips);
+    _filaSems.appendChild(_lblSems);
+    _filaSems.appendChild(_wrapSems);
+    sec.appendChild(_filaSems);
+
+    // ── Descripción de resumen ─────────────────────────────────────────
     var descripcion = document.createElement('div');
     var tieneFilOS = regla.filtro.servicios.length   ||
                      regla.filtro.tiposTurno.length  ||
                      regla.filtro.estados.length     ||
                      regla.filtro.sedes.length       ||
-                     regla.filtro.agentes.length;
+                     regla.filtro.agentes.length     ||
+                     regla.filtro.meses.length        ||
+                     regla.filtro.semanas.length;
     descripcion.textContent = tieneFilOS
-        ? '⚡ La regla aplica solo a agentes que cumplan los filtros anteriores.'
-        : '🌐 Sin filtros — la regla aplica a todo el staff.';
+        ? '⚡ La regla aplica solo cuando se cumplan los filtros anteriores.'
+        : '🌐 Sin filtros — la regla aplica a todo el staff en toda la vigencia.';
     descripcion.style.cssText = 'font-size:11px;color:var(--nb-text-light);font-style:italic;margin-bottom:10px;';
     sec.appendChild(descripcion);
 
