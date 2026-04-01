@@ -178,9 +178,10 @@ function mostrarPanel(panelId) {
     main.scrollTop = 0;
 
     switch (panelId) {
-        case 'panelStaff':    _renderPanelStaff(main); break;
+        case 'panelStaff':     _renderPanelStaff(main); break;
         case 'panelPrevision': renderModuloPrevision(main); break;
-        case 'panelA':        _renderPanelA(main); break;
+        case 'panelA':         _renderPanelA(main); break;
+        case 'panelC':         _renderPanelC(main); break;
         default:
             const item = NAV_ITEMS.find(function(i) { return i.id === panelId; });
             if (item) _renderStub(main, item);
@@ -195,8 +196,300 @@ function _renderPanelStaff(container) {
     renderModuloStaff(container);
 }
 
-// ════════════════════════════════════════════════════════════════════════════//  STUB — paneles de fases futuras
-// ══════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════
+//  PANEL C — Dimensionamiento Erlang C
+// ════════════════════════════════════════════════════════════════════════════
+
+function _renderPanelC(container) {
+    var panel = document.createElement('div');
+    panel.className = 'panel';
+    panel.id = 'panelC';
+
+    panel.innerHTML =
+        '<div class="panel-header" style="cursor:default;">' +
+            '<span class="panel-icon">📐</span>' +
+            '<h2>C · Dimensionamiento Erlang C</h2>' +
+        '</div>' +
+        '<div class="panel-body">';
+
+    container.appendChild(panel);
+    var body = panel.querySelector('.panel-body');
+
+    // ── Guardia: necesita previsión ───────────────────────────────────────
+    var tieneDatos = Object.keys(State.forecast.llamadas || {}).length > 0;
+    if (!tieneDatos) {
+        body.innerHTML =
+            '<div class="info-box" style="background:#fff3cd;border-color:#ffc107;color:#856404;">' +
+            '⚠️ No hay datos de previsión cargados. Ve al panel <strong>Previsión</strong> y carga ' +
+            'un Excel o introduce datos manualmente.</div>';
+        return;
+    }
+
+    var tieneServicios = (State.config.servicios || []).length > 0;
+    if (!tieneServicios) {
+        body.innerHTML =
+            '<div class="info-box" style="background:#fff3cd;border-color:#ffc107;color:#856404;">' +
+            '⚠️ No hay servicios configurados. Ve al panel <strong>Configuración</strong> y define al menos un servicio.</div>';
+        return;
+    }
+
+    // ── Parámetros globales ───────────────────────────────────────────────
+    var opts = State.dimensionamiento.opciones;
+
+    var secParams = document.createElement('div');
+    secParams.style.cssText = 'background:var(--nb-grey-bg);border:1px solid var(--nb-border);' +
+        'border-radius:6px;padding:14px 16px;margin-bottom:16px;';
+
+    var titParams = document.createElement('div');
+    titParams.textContent = 'Parámetros del cálculo';
+    titParams.style.cssText = 'font-size:11px;font-weight:700;color:var(--nb-text-light);' +
+        'text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px;';
+    secParams.appendChild(titParams);
+
+    var rowParams = document.createElement('div');
+    rowParams.style.cssText = 'display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;';
+
+    // Selector de servicio
+    var wSvc = _pC_labelWrap('Servicio');
+    var selSvc = document.createElement('select');
+    selSvc.style.cssText = _pC_ctrlStyle();
+    var optTodos = document.createElement('option');
+    optTodos.value = ''; optTodos.textContent = 'Todos los servicios';
+    selSvc.appendChild(optTodos);
+    State.config.servicios.forEach(function(svc) {
+        var o = document.createElement('option');
+        o.value = svc.id; o.textContent = svc.nombre;
+        if (opts.soloServicio === svc.id) o.selected = true;
+        selSvc.appendChild(o);
+    });
+    selSvc.addEventListener('change', function() {
+        opts.soloServicio = selSvc.value || null;
+        programarGuardado();
+    });
+    wSvc.appendChild(selSvc);
+    rowParams.appendChild(wSvc);
+
+    // Fecha desde
+    var wFd = _pC_labelWrap('Desde');
+    var inpFd = document.createElement('input');
+    inpFd.type = 'date'; inpFd.value = opts.fechaDesde || '';
+    inpFd.style.cssText = _pC_ctrlStyle();
+    inpFd.addEventListener('change', function() {
+        opts.fechaDesde = inpFd.value || null; programarGuardado();
+    });
+    wFd.appendChild(inpFd);
+    rowParams.appendChild(wFd);
+
+    // Fecha hasta
+    var wFh = _pC_labelWrap('Hasta');
+    var inpFh = document.createElement('input');
+    inpFh.type = 'date'; inpFh.value = opts.fechaHasta || '';
+    inpFh.style.cssText = _pC_ctrlStyle();
+    inpFh.addEventListener('change', function() {
+        opts.fechaHasta = inpFh.value || null; programarGuardado();
+    });
+    wFh.appendChild(inpFh);
+    rowParams.appendChild(wFh);
+
+    // Shrinkage extra global
+    var wShk = _pC_labelWrap('Shrinkage extra (%)');
+    var inpShk = document.createElement('input');
+    inpShk.type = 'number'; inpShk.min = '0'; inpShk.max = '60';
+    inpShk.step = '0.1'; inpShk.value = opts.shrinkageExtra || 0;
+    inpShk.style.cssText = _pC_ctrlStyle('80px');
+    inpShk.title = 'Shrinkage adicional global encima del shrinkage de cada servicio';
+    inpShk.addEventListener('change', function() {
+        opts.shrinkageExtra = parseFloat(inpShk.value) || 0; programarGuardado();
+    });
+    wShk.appendChild(inpShk);
+    rowParams.appendChild(wShk);
+
+    // Botón calcular
+    var btnCalc = document.createElement('button');
+    btnCalc.textContent = '🔄 Calcular';
+    btnCalc.className = 'btn btn-primary';
+    btnCalc.style.cssText = 'align-self:flex-end;';
+    btnCalc.addEventListener('click', function() { _pC_ejecutarCalculo(body, btnCalc); });
+    rowParams.appendChild(btnCalc);
+
+    secParams.appendChild(rowParams);
+    body.appendChild(secParams);
+
+    // ── Zona de resultados (se rellena al calcular) ───────────────────────
+    var zonaResultados = document.createElement('div');
+    zonaResultados.id = 'pC_resultados';
+    body.appendChild(zonaResultados);
+
+    // Si hay resultado previo, mostrarlo
+    if (State.dimensionamiento.resultado) {
+        _pC_renderResultados(zonaResultados, State.dimensionamiento.resultado);
+    }
+}
+
+// ── Helpers de layout ─────────────────────────────────────────────────────
+
+function _pC_labelWrap(label) {
+    var w = document.createElement('div');
+    w.style.cssText = 'display:flex;flex-direction:column;gap:4px;';
+    var lbl = document.createElement('label');
+    lbl.textContent = label;
+    lbl.style.cssText = 'font-size:11px;font-weight:600;color:var(--nb-text-light);';
+    w.appendChild(lbl);
+    return w;
+}
+
+function _pC_ctrlStyle(width) {
+    return 'padding:5px 8px;border:1px solid var(--nb-border);border-radius:4px;' +
+        'font-size:12px;font-family:inherit;' + (width ? 'width:' + width + ';' : '');
+}
+
+// ── Ejecución del cálculo ─────────────────────────────────────────────────
+
+function _pC_ejecutarCalculo(body, btnCalc) {
+    btnCalc.disabled    = true;
+    btnCalc.textContent = '⏳ Calculando…';
+
+    // Diferir para no bloquear el repintado del botón
+    setTimeout(function() {
+        try {
+            var opts = State.dimensionamiento.opciones;
+            var res  = dimensionarTodo({
+                fechaDesde:     opts.fechaDesde,
+                fechaHasta:     opts.fechaHasta,
+                soloServicio:   opts.soloServicio,
+                shrinkageExtra: opts.shrinkageExtra
+            });
+            State.dimensionamiento.resultado = res;
+            programarGuardado();
+
+            var zona = document.getElementById('pC_resultados');
+            if (zona) _pC_renderResultados(zona, res);
+            toast('Dimensionamiento completado — ' + res.resumen.totalFranjas + ' franjas calculadas', 'success');
+        } catch (e) {
+            console.error('[PanelC] Error al calcular:', e);
+            toast('Error en el cálculo: ' + e.message, 'error');
+        } finally {
+            btnCalc.disabled    = false;
+            btnCalc.textContent = '🔄 Calcular';
+        }
+    }, 30);
+}
+
+// ── Renderizado de resultados ─────────────────────────────────────────────
+
+function _pC_renderResultados(zona, res) {
+    zona.innerHTML = '';
+
+    if (!res || !res.filas || res.filas.length === 0) {
+        zona.innerHTML = '<div class="info-box">No hay resultados para los filtros seleccionados.</div>';
+        return;
+    }
+
+    var r = res.resumen;
+
+    // 1. Tarjetas KPI ──────────────────────────────────────────────────────
+    var kpis = document.createElement('div');
+    kpis.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));' +
+        'gap:12px;margin-bottom:16px;';
+
+    [
+        { label: '📞 Total llamadas',    valor: r.totalLlamadas.toLocaleString('es-ES') },
+        { label: '👤 Agentes pico',      valor: r.agentesMax },
+        { label: '👥 Agentes promedio',  valor: r.agentesPromedio },
+        { label: '🗓 Franjas calculadas',valor: r.totalFranjas.toLocaleString('es-ES') }
+    ].forEach(function(kpi) {
+        var card = document.createElement('div');
+        card.style.cssText = 'background:#fff;border:1px solid var(--nb-border);border-radius:8px;' +
+            'padding:14px 16px;text-align:center;';
+        card.innerHTML =
+            '<div style="font-size:11px;color:var(--nb-text-light);margin-bottom:6px;">' + kpi.label + '</div>' +
+            '<div style="font-size:22px;font-weight:800;color:var(--nb-primary);">' + kpi.valor + '</div>';
+        kpis.appendChild(card);
+    });
+    zona.appendChild(kpis);
+
+    // 2. Info de rango ─────────────────────────────────────────────────────
+    if (r.fechaDesde) {
+        var info = document.createElement('div');
+        info.style.cssText = 'font-size:11px;color:var(--nb-text-light);margin-bottom:10px;';
+        info.textContent = 'Periodo: ' + r.fechaDesde + ' → ' + r.fechaHasta;
+        zona.appendChild(info);
+    }
+
+    // 3. Tabla de resultados ────────────────────────────────────────────────
+    var tituloTabla = document.createElement('div');
+    tituloTabla.textContent = 'Detalle por franja';
+    tituloTabla.style.cssText = 'font-size:12px;font-weight:700;color:var(--nb-text);margin-bottom:8px;';
+    zona.appendChild(tituloTabla);
+
+    // Paginación: mostramos máx. 500 filas con aviso
+    var filasMostrar = res.filas.slice(0, 500);
+    var hayMas = res.filas.length > 500;
+
+    var wrap = document.createElement('div');
+    wrap.style.cssText = 'overflow-x:auto;border:1px solid var(--nb-border);border-radius:6px;';
+
+    var tbl = document.createElement('table');
+    tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:12px;';
+
+    var cols = ['Fecha','Franja','Servicio','Llamadas','AHT (s)','Tráfico (Erl)','Agentes','SLA real (%)','Ocupación (%)','Shrinkage (%)'];
+    var thead = document.createElement('thead');
+    var tr = document.createElement('tr');
+    cols.forEach(function(c) {
+        var th = document.createElement('th');
+        th.textContent = c;
+        th.style.cssText = 'background:var(--nb-grey-bg);padding:7px 10px;text-align:left;' +
+            'font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.04em;' +
+            'border-bottom:2px solid var(--nb-border);white-space:nowrap;';
+        tr.appendChild(th);
+    });
+    thead.appendChild(tr);
+    tbl.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    filasMostrar.forEach(function(f, i) {
+        var tr2 = document.createElement('tr');
+        tr2.style.background = i % 2 === 0 ? '#fff' : 'var(--nb-grey-bg)';
+
+        var slaColor = f.sla === null ? 'inherit'
+            : f.sla >= 80 ? 'var(--nb-green)'
+            : f.sla >= 60 ? '#F5A623'
+            : 'var(--nb-red)';
+
+        [
+            f.fecha,
+            f.franja,
+            f.servicio,
+            f.llamadas > 0 ? f.llamadas.toFixed(1) : '—',
+            f.aht,
+            f.trafico > 0  ? f.trafico.toFixed(2) : '—',
+            f.agentes       > 0 ? f.agentes : '—',
+            f.sla !== null  ? '<span style="color:' + slaColor + ';font-weight:700;">' + f.sla + '</span>' : '—',
+            f.ocupacion     > 0 ? f.ocupacion : '—',
+            f.shrinkage     > 0 ? f.shrinkage : '—'
+        ].forEach(function(val) {
+            var td = document.createElement('td');
+            td.innerHTML = val;
+            td.style.cssText = 'padding:6px 10px;border-bottom:1px solid var(--nb-border);';
+            tr2.appendChild(td);
+        });
+        tbody.appendChild(tr2);
+    });
+    tbl.appendChild(tbody);
+    wrap.appendChild(tbl);
+    zona.appendChild(wrap);
+
+    if (hayMas) {
+        var aviso = document.createElement('div');
+        aviso.style.cssText = 'font-size:11px;color:var(--nb-text-light);margin-top:6px;';
+        aviso.textContent = 'Mostrando las primeras 500 de ' + res.filas.length.toLocaleString('es-ES') + ' filas. Usa los filtros de fecha o servicio para acotar.';
+        zona.appendChild(aviso);
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  STUB — paneles de fases futuras
+// ════════════════════════════════════════════════════════════════════════════
 
 function _renderStub(container, item) {
     const panel = document.createElement('div');
@@ -432,17 +725,6 @@ function _renderPanelA2() {
             '</div>' +
             '<div class="param-grid" id="gridConvenio"></div>' +
             '<hr class="divider">' +
-            '<div class="sub-panel">' +
-                '<div class="sub-panel-header" onclick="toggleSubPanel(this)">' +
-                    '<h3>➕ Campos libres del convenio</h3>' +
-                    '<span class="sp-toggle">▼</span>' +
-                '</div>' +
-                '<div class="sp-body">' +
-                    '<div id="listaCamposLibres" style="margin-bottom:10px;"></div>' +
-                    '<button class="btn btn-secondary btn-sm" onclick="UI_addCampoLibre()">➕ Añadir campo libre</button>' +
-                '</div>' +
-            '</div>' +
-            '<hr class="divider">' +
             '<div class="sub-panel sp-collapsed">' +
                 '<div class="sub-panel-header" onclick="toggleSubPanel(this)">' +
                     '<h3>⚡ Reglas de excepción</h3>' +
@@ -459,7 +741,6 @@ function _renderPanelA2() {
 
     setTimeout(function() {
         UI_renderGridConvenio();
-        UI_renderCamposLibres();
         UI_renderReglasExcepcion();
     }, 0);
 
@@ -490,111 +771,6 @@ function UI_renderGridConvenio() {
     });
 }
 
-function UI_renderCamposLibres() {
-    const lista = document.getElementById('listaCamposLibres');
-    if (!lista) return;
-    lista.innerHTML = '';
-
-    if (!State.convenio.camposLibres.length) {
-        lista.innerHTML = '<div style="font-size:12px;color:var(--nb-text-light);padding:6px 0;">No hay campos libres definidos.</div>';
-        return;
-    }
-
-    // Cabecera de columnas
-    const cabecera = document.createElement('div');
-    cabecera.style.cssText = 'display:grid;grid-template-columns:1fr 90px 160px auto auto;gap:6px;' +
-        'align-items:center;margin-bottom:4px;padding:0 2px;';
-    cabecera.innerHTML =
-        '<span style="font-size:10px;font-weight:700;color:var(--nb-text-light);text-transform:uppercase;">Nombre</span>' +
-        '<span style="font-size:10px;font-weight:700;color:var(--nb-text-light);text-transform:uppercase;">Valor</span>' +
-        '<span style="font-size:10px;font-weight:700;color:var(--nb-text-light);text-transform:uppercase;">Rol en dimensionamiento</span>' +
-        '<span></span><span></span>';
-    lista.appendChild(cabecera);
-
-    State.convenio.camposLibres.forEach(function(campo, idx) {
-        const rolActual = campo.rol || 'info';
-
-        const row = document.createElement('div');
-        row.style.cssText = 'display:grid;grid-template-columns:1fr 90px 160px auto auto;' +
-            'gap:6px;align-items:center;margin-bottom:6px;';
-
-        // Input nombre
-        const inpNombre = document.createElement('input');
-        inpNombre.type = 'text';
-        inpNombre.placeholder = 'Nombre del campo';
-        inpNombre.value = campo.nombre || '';
-        inpNombre.style.cssText = 'padding:5px 8px;border:1px solid var(--nb-border);border-radius:4px;font-size:12px;font-family:inherit;';
-        inpNombre.addEventListener('change', function(e) {
-            State.convenio.camposLibres[idx].nombre = e.target.value; programarGuardado();
-        });
-
-        // Input valor (solo texto/número — el label indica la unidad)
-        const inpValor = document.createElement('input');
-        inpValor.type = rolActual === 'info' ? 'text' : 'number';
-        inpValor.placeholder = rolActual === 'info' ? 'Valor' : '%';
-        inpValor.value = campo.valor || '';
-        inpValor.min = 0;
-        inpValor.style.cssText = 'padding:5px 8px;border:1px solid var(--nb-border);border-radius:4px;font-size:12px;font-family:inherit;';
-        inpValor.addEventListener('change', function(e) {
-            State.convenio.camposLibres[idx].valor = e.target.value; programarGuardado();
-        });
-
-        // Select de rol
-        const selRol = document.createElement('select');
-        selRol.style.cssText = 'padding:5px 6px;border:1px solid var(--nb-border);border-radius:4px;font-size:12px;font-family:inherit;';
-        ROLES_CAMPO_LIBRE.forEach(function(r) {
-            const opt = document.createElement('option');
-            opt.value = r.value;
-            opt.textContent = r.label;
-            if (r.value === rolActual) opt.selected = true;
-            selRol.appendChild(opt);
-        });
-        selRol.addEventListener('change', function(e) {
-            State.convenio.camposLibres[idx].rol = e.target.value;
-            // Cambiar tipo del input valor según el rol
-            inpValor.type = e.target.value === 'info' ? 'text' : 'number';
-            inpValor.placeholder = e.target.value === 'info' ? 'Valor' : '%';
-            programarGuardado();
-        });
-
-        // Toggle N/A
-        const naLbl = document.createElement('label');
-        naLbl.className = 'na-toggle';
-        const naChk = document.createElement('input');
-        naChk.type = 'checkbox';
-        naChk.checked = !!campo.noAplica;
-        naChk.addEventListener('change', function(e) {
-            State.convenio.camposLibres[idx].noAplica = e.target.checked; programarGuardado();
-        });
-        naLbl.appendChild(naChk);
-        naLbl.appendChild(document.createTextNode(' N/A'));
-
-        // Botón eliminar
-        const btnDel = crearBtn('', 'btn-danger btn-sm', '🗑', function() {
-            UI_eliminarCampoLibre(idx);
-        });
-
-        row.appendChild(inpNombre);
-        row.appendChild(inpValor);
-        row.appendChild(selRol);
-        row.appendChild(naLbl);
-        row.appendChild(btnDel);
-        lista.appendChild(row);
-    });
-}
-
-function UI_addCampoLibre() {
-    State.convenio.camposLibres.push({ nombre: '', valor: '', noAplica: false, rol: 'info' });
-    UI_renderCamposLibres();
-    programarGuardado();
-}
-
-function UI_eliminarCampoLibre(idx) {
-    State.convenio.camposLibres.splice(idx, 1);
-    UI_renderCamposLibres();
-    programarGuardado();
-}
-
 function UI_presetConvenioES() {
     Object.keys(PRESET_CONVENIO_ES_CC).forEach(function(k) {
         if (State.convenio[k]) {
@@ -611,46 +787,367 @@ function UI_resetConvenio() { UI_presetConvenioES(); }
 
 // ── A2: Reglas de excepción ───────────────────────────────────────────────
 
+/**
+ * Renderiza la fila de excepción "Días de trabajo" con toggle + botones L-M-X-J-V-S-D.
+ * [] = sin override (trabaja todos los días definidos en su turno)
+ */
+function _rRegla_filaParamDiasTrabajo(regla) {
+    var param = regla.parametros.diasTrabajo;
+
+    var wrap = document.createElement('div');
+    wrap.style.marginTop = '10px';
+
+    var tit = document.createElement('div');
+    tit.textContent = 'Excepciones · Días de trabajo';
+    tit.style.cssText = 'font-size:10px;font-weight:700;color:var(--nb-text-light);' +
+        'text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;';
+    wrap.appendChild(tit);
+
+    var fila = document.createElement('div');
+    fila.style.cssText = 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;';
+
+    // Checkbox activar
+    var chk = document.createElement('input');
+    chk.type    = 'checkbox';
+    chk.checked = !!param.activa;
+    chk.style.cssText = 'width:14px;height:14px;cursor:pointer;accent-color:var(--nb-primary);flex-shrink:0;';
+
+    var lbl = document.createElement('span');
+    lbl.textContent = 'Días trabajados (excepción)';
+    lbl.style.cssText = 'font-size:12px;color:' + (param.activa ? 'var(--nb-text)' : 'var(--nb-text-light)') + ';';
+
+    // Contenedor de los botones de días
+    var wrapDias = document.createElement('div');
+    wrapDias.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;margin-left:4px;' +
+        (param.activa ? '' : 'opacity:0.3;pointer-events:none;');
+
+    var DIAS = [
+        { val: 1, label: 'L' }, { val: 2, label: 'M' }, { val: 3, label: 'X' },
+        { val: 4, label: 'J' }, { val: 5, label: 'V' }, { val: 6, label: 'S' },
+        { val: 0, label: 'D' }
+    ];
+    DIAS.forEach(function(d) {
+        var activo = param.valor.indexOf(d.val) > -1;
+        var btn = document.createElement('button');
+        btn.textContent   = d.label;
+        btn.dataset.dia   = d.val;
+        btn.title         = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][d.val];
+        btn.style.cssText = 'width:26px;height:26px;border-radius:50%;font-size:11px;font-weight:700;' +
+            'cursor:pointer;transition:all 0.15s;border:1px solid ' +
+            (activo ? 'var(--nb-primary)' : 'var(--nb-border)') + ';' +
+            'background:' + (activo ? 'var(--nb-primary)' : '#fff') + ';' +
+            'color:'       + (activo ? '#fff'              : 'var(--nb-text-light)') + ';';
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            var idx = param.valor.indexOf(d.val);
+            if (idx > -1) {
+                param.valor.splice(idx, 1);
+                btn.style.background  = '#fff';
+                btn.style.borderColor = 'var(--nb-border)';
+                btn.style.color       = 'var(--nb-text-light)';
+            } else {
+                param.valor.push(d.val);
+                btn.style.background  = 'var(--nb-primary)';
+                btn.style.borderColor = 'var(--nb-primary)';
+                btn.style.color       = '#fff';
+            }
+            programarGuardado();
+        });
+        wrapDias.appendChild(btn);
+    });
+
+    // Accesos rápidos
+    var estiloQ = 'padding:2px 7px;font-size:10px;border:1px solid var(--nb-border);' +
+        'border-radius:4px;background:#fff;cursor:pointer;margin-left:4px;color:var(--nb-text-light);';
+    [['L–V',[1,2,3,4,5]],['FDS',[6,0]],['Todos',[]]].forEach(function(par) {
+        var b = document.createElement('button');
+        b.textContent = par[0];
+        b.title       = par[0] === 'Todos' ? 'Sin restricción de días' : 'Seleccionar ' + par[0];
+        b.style.cssText = estiloQ;
+        b.addEventListener('click', function(e) {
+            e.stopPropagation();
+            param.valor = par[1].slice();
+            _rRegla_refrescarDias(wrapDias, param.valor);
+            programarGuardado();
+        });
+        wrapDias.appendChild(b);
+    });
+
+    // Toggle activa
+    chk.addEventListener('change', function() {
+        param.activa          = chk.checked;
+        lbl.style.color       = param.activa ? 'var(--nb-text)' : 'var(--nb-text-light)';
+        wrapDias.style.opacity       = param.activa ? '' : '0.3';
+        wrapDias.style.pointerEvents = param.activa ? '' : 'none';
+        programarGuardado();
+    });
+
+    fila.appendChild(chk);
+    fila.appendChild(lbl);
+    fila.appendChild(wrapDias);
+    fila.appendChild(_rRegla_btnInfoParam(
+        'Días de la semana en que trabaja el grupo (excepción al calendario estándar).\n' +
+        'Ej: Sede Valladolid no trabaja viernes → selecciona L M X J → el dimensionamiento excluirá ese día para el grupo.\n' +
+        'Vacío = sin restricción (trabaja los días definidos por su turno).'
+    ));
+    wrap.appendChild(fila);
+    return wrap;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MODAL INFO de excepción: abierto al pulsar ℹ️ en cada tarjeta
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MODAL INFO de excepción: abierto al pulsar ℹ️ en cada tarjeta
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Crea un botón ℹ pequeño que muestra un mini-popover con el texto dado.
+ * El popover se cierra al hacer clic fuera, en el propio botón, o con Escape.
+ */
+function _rRegla_btnInfoParam(texto) {
+    var btn = document.createElement('button');
+    btn.textContent = 'ℹ';
+    btn.title = 'Ver descripción';
+    btn.style.cssText = 'background:none;border:none;cursor:pointer;font-size:12px;' +
+        'color:var(--nb-text-light);padding:0 2px;flex-shrink:0;opacity:0.55;line-height:1;';
+
+    var popover = null;
+
+    btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        if (popover) {
+            document.body.removeChild(popover);
+            popover = null;
+            return;
+        }
+        popover = document.createElement('div');
+        popover.style.cssText = 'position:fixed;z-index:9999;max-width:280px;' +
+            'background:#1e2535;color:#e8ecf4;font-size:11.5px;line-height:1.6;' +
+            'padding:9px 12px;border-radius:6px;' +
+            'box-shadow:0 4px 18px rgba(0,0,0,0.4);' +
+            'white-space:pre-wrap;word-break:break-word;' +
+            'border-left:3px solid var(--nb-primary,#e8781a);';
+        popover.textContent = texto;
+
+        var r = btn.getBoundingClientRect();
+        var left = r.right + 10;
+        if (left + 290 > window.innerWidth) left = Math.max(6, r.left - 294);
+        var top = r.top - 4;
+        if (top + 120 > window.innerHeight) top = Math.max(6, window.innerHeight - 126);
+        popover.style.left = left + 'px';
+        popover.style.top  = top  + 'px';
+        document.body.appendChild(popover);
+
+        function cerrar() {
+            if (!popover) return;
+            document.body.removeChild(popover);
+            popover = null;
+            document.removeEventListener('click', cerrar);
+            document.removeEventListener('keydown', esc);
+        }
+        function esc(ev) { if (ev.key === 'Escape') cerrar(); }
+        setTimeout(function() {
+            document.addEventListener('click', cerrar);
+            document.addEventListener('keydown', esc);
+        }, 0);
+    });
+
+    btn.addEventListener('mouseenter', function() { btn.style.opacity = '1'; });
+    btn.addEventListener('mouseleave', function() { btn.style.opacity = '0.55'; });
+    return btn;
+}
+
+/** Construye el texto del modal a partir del objeto regla */
+function _rRegla_generarTooltip(regla) {
+    var lineas = [];
+    var P = regla.parametros;
+
+    // Estado
+    lineas.push((regla.activa ? '✅ Regla activa' : '⏸ Regla inactiva') +
+        '  ·  Prioridad ' + regla.prioridad);
+    lineas.push('');
+
+    // Filtros
+    var filtros = [];
+    if (regla.filtro.servicios.length)  filtros.push('Servicio: ' + regla.filtro.servicios.join(', '));
+    if (regla.filtro.tiposTurno.length) filtros.push('Turno: '    + regla.filtro.tiposTurno.join(', '));
+    if (regla.filtro.estados.length)    filtros.push('Estado: '   + regla.filtro.estados.join(', '));
+    if (regla.filtro.sedes.length)      filtros.push('Sede: '     + regla.filtro.sedes.join(', '));
+    if (regla.filtro.agentes.length)    filtros.push(regla.filtro.agentes.length + ' agente(s) individual(es)');
+    lineas.push(filtros.length
+        ? '🎯 Aplica a: ' + filtros.join(' | ')
+        : '🌐 Aplica a todo el staff');
+    lineas.push('');
+
+    // Parámetros de cálculo base
+    var efectos = [];
+    var _fx = function(cond, txt) { if (cond) efectos.push(txt); };
+    _fx(P.shrinkage.activa,
+        'Shrinkage ' + P.shrinkage.valor + '% — ajusta el colchón de agentes no productivos');
+    _fx(P.reduccionJornada.activa,
+        'Reducción jornada ' + P.reduccionJornada.valor + '% — reduce horas efectivas por agente');
+    _fx(P.ocupacionMax.activa,
+        'Ocupación máx. ' + P.ocupacionMax.valor + '% — limita la carga por agente → +agentes necesarios');
+    _fx(P.ahtOverride.activa,
+        'AHT override ' + P.ahtOverride.valor + 's — sustituye el AHT del servicio en el cálculo Erlang');
+    _fx(P.jornadaSemanal.activa,
+        'Jornada semanal ' + P.jornadaSemanal.valor + 'h — cambia capacidad horaria por agente');
+    _fx(P.vacaciones.activa,
+        'Vacaciones ' + P.vacaciones.valor + ' días — reduce disponibilidad anual');
+
+    // Días de trabajo
+    if (P.diasTrabajo.activa && P.diasTrabajo.valor.length) {
+        var NDIA = ['D','L','M','X','J','V','S'];
+        var etiq = P.diasTrabajo.valor.map(function(d) { return NDIA[d]; }).join('');
+        efectos.push('Días trabajados: ' + etiq + ' — restringe la planificación semanal');
+    }
+
+    // Rotación
+    var R = P.rotacion || {};
+    if (R.fdsAlMes           && R.fdsAlMes.activa)           efectos.push('FDS al mes: ' + R.fdsAlMes.valor + ' — condicion de descanso semanal');
+    if (R.cambiosTurnoMes    && R.cambiosTurnoMes.activa)    efectos.push('Cambios turno/mes máx. ' + R.cambiosTurnoMes.valor);
+    if (R.maxNochesConsec    && R.maxNochesConsec.activa)    efectos.push('Máx. noches consecutivas: ' + R.maxNochesConsec.valor);
+    if (R.nochesAlMes        && R.nochesAlMes.activa)        efectos.push('Noches al mes máx. ' + R.nochesAlMes.valor);
+
+    // Carga especial
+    var C = P.carga || {};
+    if (C.festivosObligAnio  && C.festivosObligAnio.activa)  efectos.push('Festivos obligatorios: ' + C.festivosObligAnio.valor + '/año');
+    if (C.guardiasAlMes      && C.guardiasAlMes.activa)      efectos.push('Guardias al mes: '       + C.guardiasAlMes.valor);
+    if (C.horasExtraAnio     && C.horasExtraAnio.activa)     efectos.push('Horas extra/año máx. '   + C.horasExtraAnio.valor + 'h');
+
+    // Teletrabajo
+    var T = P.teletrabajo || {};
+    if (T.diasSemana && T.diasSemana.activa) efectos.push('Teletrabajo: ' + T.diasSemana.valor + ' días/semana');
+    if (T.diasMes    && T.diasMes.activa)    efectos.push('Teletrabajo: ' + T.diasMes.valor + ' días/mes');
+
+    if (efectos.length) {
+        lineas.push('⚙️ Efecto en dimensionamiento:');
+        efectos.forEach(function(e) { lineas.push('   · ' + e); });
+    } else {
+        lineas.push('⚙️ Sin parámetros de excepción activos todavía');
+    }
+
+    // Notas
+    if (regla.notas && regla.notas.trim()) {
+        lineas.push('');
+        lineas.push('📝 ' + regla.notas.trim());
+    }
+
+    return lineas.join('\n');
+}
+
+/** Abre un modal centrado con el resumen de la regla */
+function _rRegla_mostrarInfoModal(regla) {
+    // Overlay
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,20,35,0.55);' +
+        'z-index:9999;display:flex;align-items:center;justify-content:center;';
+
+    // Caja del modal
+    var box = document.createElement('div');
+    box.style.cssText = 'background:#1e2535;color:#e8ecf4;border-radius:10px;' +
+        'box-shadow:0 10px 40px rgba(0,0,0,0.5);max-width:420px;width:90%;' +
+        'max-height:80vh;display:flex;flex-direction:column;overflow:hidden;' +
+        'border-left:4px solid var(--nb-primary,#e8781a);';
+
+    // Cabecera del modal
+    var mHdr = document.createElement('div');
+    mHdr.style.cssText = 'display:flex;align-items:center;gap:8px;padding:12px 16px;' +
+        'border-bottom:1px solid rgba(255,255,255,0.1);flex-shrink:0;';
+    var mTit = document.createElement('span');
+    mTit.textContent = regla.nombre || 'Regla sin nombre';
+    mTit.style.cssText = 'flex:1;font-weight:700;font-size:14px;';
+    var btnCerrar = document.createElement('button');
+    btnCerrar.textContent = '✕';
+    btnCerrar.style.cssText = 'background:none;border:none;color:#aab;cursor:pointer;' +
+        'font-size:16px;padding:0 2px;line-height:1;';
+    mHdr.appendChild(mTit);
+    mHdr.appendChild(btnCerrar);
+
+    // Contenido
+    var mBody = document.createElement('div');
+    mBody.style.cssText = 'padding:14px 16px;overflow-y:auto;font-size:12px;' +
+        'line-height:1.7;white-space:pre-wrap;word-break:break-word;';
+    mBody.textContent = _rRegla_generarTooltip(regla);
+
+    box.appendChild(mHdr);
+    box.appendChild(mBody);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    // Cerrar
+    function cerrar() { document.body.removeChild(overlay); }
+    btnCerrar.addEventListener('click', cerrar);
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) cerrar(); });
+    document.addEventListener('keydown', function esc(e) {
+        if (e.key === 'Escape') { cerrar(); document.removeEventListener('keydown', esc); }
+    });
+}
+
 /** Metadatos param base (Fase 2) */
 var _REG_PARAM_BASE_META = [
-    { key: 'shrinkage',        label: 'Shrinkage adicional',  unidad: '%',    min: 0, max: 100,  step: 0.1 },
-    { key: 'reduccionJornada', label: 'Reducción de jornada', unidad: '%',    min: 0, max: 50,   step: 0.1 },
-    { key: 'ocupacionMax',     label: 'Ocupación máxima',     unidad: '%',    min: 1, max: 100,  step: 1   },
-    { key: 'ahtOverride',      label: 'AHT override',         unidad: 'seg',  min: 1, max: 9999, step: 1   },
-    { key: 'jornadaSemanal',   label: 'Jornada semanal',      unidad: 'h',    min: 1, max: 60,   step: 0.5 },
-    { key: 'vacaciones',       label: 'Vacaciones',           unidad: 'días', min: 0, max: 60,   step: 1   }
+    { key: 'shrinkage',        label: 'Shrinkage adicional',  unidad: '%',    min: 0, max: 100,  step: 0.1,
+      desc: 'Porcentaje de tiempo improductivo adicional (bajas, formación, pausas no planificadas…).\nAumenta el nº de agentes necesarios. Ej: 5 % → necesitas un 5 % más de agentes sobre el Erlang base.' },
+    { key: 'reduccionJornada', label: 'Reducción de jornada', unidad: '%',    min: 0, max: 50,   step: 0.1,
+      desc: 'Porcentaje de reducción sobre la jornada estándar del convenio (lactancia, reducción legal, parcial…).\nCada agente aporta menos horas → se necesitan más agentes para cubrir la misma carga.' },
+    { key: 'ocupacionMax',     label: 'Ocupación máxima',     unidad: '%',    min: 1, max: 100,  step: 1,
+      desc: 'Límite de ocupación permitido para el grupo (< 100 % deja margen de recuperación).\nUna ocupación más baja aumenta directamente el nº de agentes que devuelve Erlang C.' },
+    { key: 'ahtOverride',      label: 'AHT override',         unidad: 'seg',  min: 1, max: 9999, step: 1,
+      desc: 'Reemplaza el AHT del servicio por este valor en segundos al calcular Erlang para el grupo.\nÚtil cuando el grupo tarda sistemáticamente más o menos que la media del servicio.' },
+    { key: 'jornadaSemanal',   label: 'Jornada semanal',      unidad: 'h',    min: 1, max: 60,   step: 0.5,
+      desc: 'Horas semanales efectivas del grupo, si difieren del convenio general.\nAfecta directamente la capacidad semanal por agente y el cómputo de FTEs.' },
+    { key: 'vacaciones',       label: 'Vacaciones',           unidad: 'días', min: 0, max: 60,   step: 1,
+      desc: 'Días de vacaciones anuales del grupo.\nReduce los días disponibles al año → se necesitan más agentes en plantilla para mantener la cobertura.' }
 ];
 
 /** Metadatos Rotación y turnos (Fase 4) */
 var _REG_ROTACION_META = [
     { key: 'frecuencia',          label: 'Frecuencia rotación',    tipo: 'select',
       opciones: ['semanal','quincenal','mensual','trimestral','no_rota'],
-      labels:   ['Semanal','Quincenal','Mensual','Trimestral','No rota'] },
+      labels:   ['Semanal','Quincenal','Mensual','Trimestral','No rota'],
+      desc: 'Con qué frecuencia rota el grupo entre turnos.\nMás rotación implica mayor complejidad en cuadrantes pero mejor reparto de carga nocturna/FDS.' },
     { key: 'patronFds',           label: 'Patrón FDS',             tipo: 'select',
       opciones: ['1_cada_2','1_cada_3','1_cada_4','libre','nunca'],
-      labels:   ['1 de cada 2','1 de cada 3','1 de cada 4','Libre','Nunca'] },
-    { key: 'fdsAlMes',            label: 'FDS trabajados / mes',   unidad: 'FDS',  min: 0, max: 10,  step: 1 },
-    { key: 'cambiosTurnoMes',     label: 'Cambios de turno / mes', unidad: '/mes', min: 0, max: 50,  step: 1 },
-    { key: 'cambiosTurnoAnio',    label: 'Cambios de turno / año', unidad: '/año', min: 0, max: 200, step: 1 },
-    { key: 'descansoCambioTurno', label: 'Descanso entre turnos',  unidad: 'h',    min: 0, max: 72,  step: 1 },
-    { key: 'maxNochesConsec',     label: 'Máx. noches consecutivas',unidad: 'n.',   min: 1, max: 20,  step: 1 },
-    { key: 'nochesAlMes',         label: 'Noches al mes',          unidad: 'n.',   min: 0, max: 31,  step: 1 }
+      labels:   ['1 de cada 2','1 de cada 3','1 de cada 4','Libre','Nunca'],
+      desc: 'Cuántos fines de semana trabaja el grupo en promedio.\nCondiciona la disponibilidad en FDS y el cómputo mínimo de descanso semanal.' },
+    { key: 'fdsAlMes',            label: 'FDS trabajados / mes',   unidad: 'FDS',  min: 0, max: 10,  step: 1,
+      desc: 'Número máximo de fines de semana que puede trabajar cada agente al mes.\nLimita cuántos agentes están disponibles en sábado/domingo.' },
+    { key: 'cambiosTurnoMes',     label: 'Cambios de turno / mes', unidad: '/mes', min: 0, max: 50,  step: 1,
+      desc: 'Máximo de cambios de turno permitidos en un mes.\nRestricciones de convenio que acotan la flexibilidad de planificación.' },
+    { key: 'cambiosTurnoAnio',    label: 'Cambios de turno / año', unidad: '/año', min: 0, max: 200, step: 1,
+      desc: 'Tope anual de cambios de turno.\nUsado para validar la sostenibilidad de los cuadrantes anuales.' },
+    { key: 'descansoCambioTurno', label: 'Descanso entre turnos',  unidad: 'h',    min: 0, max: 72,  step: 1,
+      desc: 'Horas mínimas de descanso obligatorio entre el fin de un turno y el inicio del siguiente.\nEvita turnicidad abusiva y bloquea ciertas combinaciones de asignación.' },
+    { key: 'maxNochesConsec',     label: 'Máx. noches consecutivas',unidad: 'n.',   min: 1, max: 20,  step: 1,
+      desc: 'Número máximo de turnos de noche consecutivos permitidos.\nRequisito de salud laboral que limita la asignación continua de noches.' },
+    { key: 'nochesAlMes',         label: 'Noches al mes',          unidad: 'n.',   min: 0, max: 31,  step: 1,
+      desc: 'Tope de turnos de noche al mes para el grupo.\nAfecta la cantidad de agentes que deben cursar turno nocturno en cada periodo.' }
 ];
 
 /** Metadatos Carga especial (Fase 4) */
 var _REG_CARGA_META = [
-    { key: 'festivosObligAnio',  label: 'Festivos oblig. / año',  unidad: 'días', min: 0,    max: 30,   step: 1 },
-    { key: 'guardiasAlMes',      label: 'Guardias / mes',          unidad: '/mes', min: 0,    max: 20,   step: 1 },
-    { key: 'jornadaPartidaMes',  label: 'Jornada partida / mes',   unidad: '/mes', min: 0,    max: 31,   step: 1 },
-    { key: 'horasExtraMes',      label: 'Horas extra / mes',       unidad: 'h',    min: 0,    max: 200,  step: 1 },
-    { key: 'horasExtraAnio',     label: 'Horas extra / año',       unidad: 'h',    min: 0,    max: 1000, step: 1 },
-    { key: 'bolsaHoras',         label: 'Bolsa de horas',          unidad: 'h',    min: -500, max: 500,  step: 1 }
+    { key: 'festivosObligAnio',  label: 'Festivos oblig. / año',  unidad: 'días', min: 0,    max: 30,   step: 1,
+      desc: 'Festivos anuales que el grupo debe cubrir obligatoriamente.\nReducen los días de baja actividad y aumentan la carga real del grupo.' },
+    { key: 'guardiasAlMes',      label: 'Guardias / mes',          unidad: '/mes', min: 0,    max: 20,   step: 1,
+      desc: 'Guardias de disponibilidad (presencia o localizable) al mes.\nAumenta la carga sin añadir servicio directo; consume disponibilidad del agente.' },
+    { key: 'jornadaPartidaMes',  label: 'Jornada partida / mes',   unidad: '/mes', min: 0,    max: 31,   step: 1,
+      desc: 'Días al mes en que el grupo trabaja en jornada partida (mañana + tarde).\nReduce la disponibilidad continua y puede incrementar la fatiga.' },
+    { key: 'horasExtraMes',      label: 'Horas extra / mes',       unidad: 'h',    min: 0,    max: 200,  step: 1,
+      desc: 'Horas extra permitidas al mes para cubrir picos de demanda.\nAmplía la capacidad del grupo sin incorporar nuevos agentes.' },
+    { key: 'horasExtraAnio',     label: 'Horas extra / año',       unidad: 'h',    min: 0,    max: 1000, step: 1,
+      desc: 'Tope anual de horas extra disponibles.\nLimita el recurso adicional; superado este tope no se pueden asignar más horas extra.' },
+    { key: 'bolsaHoras',         label: 'Bolsa de horas',          unidad: 'h',    min: -500, max: 500,  step: 1,
+      desc: 'Horas acumuladas (+) a favor del grupo o a compensar (−).\nModifica la capacidad efectiva disponible en el periodo de cálculo.' }
 ];
 
 /** Metadatos Teletrabajo (Fase 4) */
 var _REG_TELETRABAJO_META = [
-    { key: 'diasSemana', label: 'Días teletrabajo / semana', unidad: 'días', min: 0, max: 7,  step: 1 },
-    { key: 'diasMes',    label: 'Días teletrabajo / mes',    unidad: 'días', min: 0, max: 31, step: 1 }
+    { key: 'diasSemana', label: 'Días teletrabajo / semana', unidad: 'días', min: 0, max: 7,  step: 1,
+      desc: 'Días de teletrabajo por semana del grupo.\nNo afecta al cálculo Erlang, pero es relevante para la planificación de puestos físicos en sede.' },
+    { key: 'diasMes',    label: 'Días teletrabajo / mes',    unidad: 'días', min: 0, max: 31, step: 1,
+      desc: 'Días de teletrabajo por mes del grupo (alternativo al cómputo semanal).\nPermite fijar una bolsa mensual flexible en lugar de un patrón semanal fijo.' }
 ];
 
 /**
@@ -740,6 +1237,7 @@ function _rRegla_grupoSubParams(titulo, subObj, metas) {
         fila.appendChild(lbl);
         fila.appendChild(ctrl);
         fila.appendChild(uni);
+        if (meta.desc) fila.appendChild(_rRegla_btnInfoParam(meta.desc));
         wrap.appendChild(fila);
     });
 
@@ -826,6 +1324,18 @@ function _rRegla_crearTarjeta(regla) {
     arrow.textContent = '▶';
     arrow.style.cssText = 'font-size:10px;color:var(--nb-text-light);transition:transform 0.2s;flex-shrink:0;';
 
+    // Botón info
+    var btnInfo = document.createElement('button');
+    btnInfo.textContent = 'ℹ️';
+    btnInfo.title = 'Ver resumen de la regla y efecto en dimensionamiento';
+    btnInfo.style.cssText = 'background:none;border:none;cursor:pointer;font-size:13px;padding:2px;flex-shrink:0;opacity:0.7;';
+    btnInfo.addEventListener('click', function(e) {
+        e.stopPropagation();
+        _rRegla_mostrarInfoModal(regla);
+    });
+    btnInfo.addEventListener('mouseenter', function() { btnInfo.style.opacity = '1'; });
+    btnInfo.addEventListener('mouseleave', function() { btnInfo.style.opacity = '0.7'; });
+
     // Botón eliminar
     var btnDel = document.createElement('button');
     btnDel.textContent = '🗑';
@@ -839,6 +1349,7 @@ function _rRegla_crearTarjeta(regla) {
     hdr.appendChild(btnActiva);
     hdr.appendChild(inpNombre);
     hdr.appendChild(arrow);
+    hdr.appendChild(btnInfo);
     hdr.appendChild(btnDel);
 
     // ── Body (acordeón, colapsado por defecto) ────────────────────────────
@@ -859,6 +1370,7 @@ function _rRegla_crearTarjeta(regla) {
     });
 
     // Grupos Fase 4
+    body.appendChild(_rRegla_filaParamDiasTrabajo(regla));
     body.appendChild(_rRegla_grupoSubParams(
         'Rotación y turnos', regla.parametros.rotacion, _REG_ROTACION_META
     ));
@@ -930,10 +1442,11 @@ function _rRegla_filaParam(regla, meta) {
     fila.appendChild(lbl);
     fila.appendChild(inp);
     fila.appendChild(uni);
+    if (meta.desc) fila.appendChild(_rRegla_btnInfoParam(meta.desc));
     return fila;
 }
 
-// ── A2: helpers filtros (Fase 3) ─────────────────────────────────────────
+// ── A2: helpers filtros (Fase 3) ─────────────────────────────────────────────
 
 var _TIPOS_TURNO_FILTRO = [
     { value: 'FIJO',              label: 'Fijo'              },
@@ -1071,102 +1584,12 @@ function _rRegla_seccionFiltros(regla) {
     filaAgentes.appendChild(wrapAg);
     sec.appendChild(filaAgentes);
 
-    // ── Días de la semana ─────────────────────────────────────────
-    var filaDias = document.createElement('div');
-    filaDias.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:7px;';
-
-    var lblDias = document.createElement('span');
-    lblDias.textContent = 'Días';
-    lblDias.style.cssText = 'font-size:11px;color:var(--nb-text-light);width:90px;flex-shrink:0;';
-
-    var wrapDias = document.createElement('div');
-    wrapDias.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;flex:1;';
-
-    var DIAS = [
-        { val: 1, label: 'L' }, { val: 2, label: 'M' }, { val: 3, label: 'X' },
-        { val: 4, label: 'J' }, { val: 5, label: 'V' }, { val: 6, label: 'S' },
-        { val: 0, label: 'D' }
-    ];
-    DIAS.forEach(function(d) {
-        var activo = regla.filtro.diasSemana.indexOf(d.val) > -1;
-        var btn = document.createElement('button');
-        btn.textContent = d.label;
-        btn.dataset.dia = d.val;
-        btn.title = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][d.val];
-        btn.style.cssText = 'width:26px;height:26px;border-radius:50%;font-size:11px;font-weight:700;' +
-            'cursor:pointer;transition:all 0.15s;border:1px solid ' +
-            (activo ? 'var(--nb-primary)' : 'var(--nb-border)') + ';' +
-            'background:' + (activo ? 'var(--nb-primary)' : '#fff') + ';' +
-            'color:'       + (activo ? '#fff'              : 'var(--nb-text-light)') + ';';
-        btn.addEventListener('click', function(e) {
-            e.stopPropagation();
-            var idx = regla.filtro.diasSemana.indexOf(d.val);
-            if (idx > -1) {
-                regla.filtro.diasSemana.splice(idx, 1);
-                btn.style.background   = '#fff';
-                btn.style.borderColor  = 'var(--nb-border)';
-                btn.style.color        = 'var(--nb-text-light)';
-            } else {
-                regla.filtro.diasSemana.push(d.val);
-                btn.style.background   = 'var(--nb-primary)';
-                btn.style.borderColor  = 'var(--nb-primary)';
-                btn.style.color        = '#fff';
-            }
-            programarGuardado();
-        });
-        wrapDias.appendChild(btn);
-    });
-
-    // Botones rápidos
-    var btnLV = document.createElement('button');
-    btnLV.textContent = 'L–V';
-    btnLV.title = 'Seleccionar lunes a viernes';
-    btnLV.style.cssText = 'padding:2px 7px;font-size:10px;border:1px solid var(--nb-border);' +
-        'border-radius:4px;background:#fff;cursor:pointer;margin-left:6px;color:var(--nb-text-light);';
-    btnLV.addEventListener('click', function(e) {
-        e.stopPropagation();
-        regla.filtro.diasSemana = [1,2,3,4,5];
-        _rRegla_refrescarDias(wrapDias, regla.filtro.diasSemana);
-        programarGuardado();
-    });
-
-    var btnFDS = document.createElement('button');
-    btnFDS.textContent = 'FDS';
-    btnFDS.title = 'Seleccionar sábado y domingo';
-    btnFDS.style.cssText = btnLV.style.cssText;
-    btnFDS.addEventListener('click', function(e) {
-        e.stopPropagation();
-        regla.filtro.diasSemana = [6,0];
-        _rRegla_refrescarDias(wrapDias, regla.filtro.diasSemana);
-        programarGuardado();
-    });
-
-    var btnTodos = document.createElement('button');
-    btnTodos.textContent = 'Todos';
-    btnTodos.title = 'Deseleccionar todos los días (sin restricción)';
-    btnTodos.style.cssText = btnLV.style.cssText;
-    btnTodos.addEventListener('click', function(e) {
-        e.stopPropagation();
-        regla.filtro.diasSemana = [];
-        _rRegla_refrescarDias(wrapDias, regla.filtro.diasSemana);
-        programarGuardado();
-    });
-
-    wrapDias.appendChild(btnLV);
-    wrapDias.appendChild(btnFDS);
-    wrapDias.appendChild(btnTodos);
-
-    filaDias.appendChild(lblDias);
-    filaDias.appendChild(wrapDias);
-    sec.appendChild(filaDias);
-
     var descripcion = document.createElement('div');
     var tieneFilOS = regla.filtro.servicios.length   ||
                      regla.filtro.tiposTurno.length  ||
                      regla.filtro.estados.length     ||
                      regla.filtro.sedes.length       ||
-                     regla.filtro.agentes.length     ||
-                     regla.filtro.diasSemana.length;
+                     regla.filtro.agentes.length;
     descripcion.textContent = tieneFilOS
         ? '⚡ La regla aplica solo a agentes que cumplan los filtros anteriores.'
         : '🌐 Sin filtros — la regla aplica a todo el staff.';

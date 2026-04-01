@@ -32,10 +32,6 @@ const State = {
         pausa68:        { valor: 20,    noAplica: false },
         vacaciones:     { valor: 23,    noAplica: false },
         pvdShrinkage:   { valor: 16.7,  noAplica: false },
-        camposLibres:   [     // [{ nombre, valor, noAplica, rol }] — LEGACY (ver reglasExcepcion)
-            // rol: 'info' | 'shrinkage' | 'reduccion_jornada' | 'ocupacion_max'
-            { nombre: 'Rotación FDS por defecto', valor: 33, noAplica: true, rol: 'info' }
-        ],
         reglasExcepcion: []   // [crearReglaExcepcion()] — motor de reglas por segmento de staff
     },
 
@@ -58,8 +54,14 @@ const State = {
     // ── C. Dimensionamiento ───────────────────────────────────────────────
     dimensionamiento: {
         shrinkageMensual: {},   // { 'YYYY-MM': { operativo:{valor,noAplica}, absentismo:{valor,noAplica} } }
-        resultado:        null,
-        matrizFTE:        []
+        opciones: {             // Parámetros globales del panel C
+            shrinkageExtra:  0,    // % adicional encima del shrinkage de cada servicio
+            fechaDesde:      null, // 'YYYY-MM-DD'
+            fechaHasta:      null,
+            soloServicio:    null  // null = todos
+        },
+        resultado:  null,  // último { filas[], resumen{} } calculado
+        matrizFTE:  []
     },
 
     // ── D. Análisis NDA/NDS + What-If ────────────────────────────────────
@@ -147,7 +149,6 @@ function crearReglaExcepcion(nombre) {
             gruposPro:       [],   // 'teleoperador'|'especialista'|'supervisor'
             sedes:           [],
             agentes:         [],   // codigos individuales []
-            diasSemana:      [],   // [1,2,3,4,5,6,0]  1=Lun … 6=Sáb, 0=Dom  [] = todos
             antiguedadMin:   null,
             antiguedadMax:   null,
             franjas:         null  // null | { desde:'HH:MM', hasta:'HH:MM', dias:[0..6] }
@@ -161,6 +162,7 @@ function crearReglaExcepcion(nombre) {
             ahtOverride:         { activa: false, valor: null },
             jornadaSemanal:      { activa: false, valor: null },
             vacaciones:          { activa: false, valor: null },
+            diasTrabajo:         { activa: false, valor: [] }, // días lab. excepción [1..6,0]; [] = sin override
 
             // — Rotación y turnos —
             rotacion: {
@@ -220,10 +222,12 @@ function _normalizarRegla(regla) {
     if (!regla.parametros) {
         regla.parametros = defaults.parametros;
     } else {
-        ['shrinkage','reduccionJornada','ocupacionMax','ahtOverride','jornadaSemanal','vacaciones']
+        ['shrinkage','reduccionJornada','ocupacionMax','ahtOverride','jornadaSemanal','vacaciones','diasTrabajo']
             .forEach(function(k) {
                 if (!regla.parametros[k]) regla.parametros[k] = defaults.parametros[k];
             });
+        // diasTrabajo.valor debe ser siempre array
+        if (!Array.isArray(regla.parametros.diasTrabajo.valor)) regla.parametros.diasTrabajo.valor = [];
         // Sub-grupos
         ['rotacion','carga','teletrabajo'].forEach(function(grupo) {
             if (!regla.parametros[grupo]) {
@@ -250,11 +254,14 @@ function guardarEstado() {
     try {
         const snapshot = {
             config:           State.config,
-            convenio:         State.convenio,   // incluye camposLibres y reglasExcepcion
+            convenio:         State.convenio,   // incluye reglasExcepcion
             perfiles:         State.perfiles,
             staff:            { todos: State.staff.todos },
             forecast:         { llamadas: State.forecast.llamadas, aht: State.forecast.aht, editado: State.forecast.editado },
-            dimensionamiento: { shrinkageMensual: State.dimensionamiento.shrinkageMensual },
+            dimensionamiento: {
+                shrinkageMensual: State.dimensionamiento.shrinkageMensual,
+                opciones:         State.dimensionamiento.opciones
+            },
             _version:         State._version
         };
         localStorage.setItem(LS_STATE_KEY, JSON.stringify(snapshot));
@@ -278,28 +285,6 @@ function _normalizarServicio(svc) {
     return svc;
 }
 
-/**
- * Campos libres predefinidos por defecto.
- * Se añaden si no existen ya (por nombre) tras restaurar el estado,
- * sin destruir los campos libres que el usuario haya configurado.
- */
-var _CAMPOS_LIBRES_DEFECTO = [
-    { nombre: 'Rotación FDS por defecto', valor: 33, noAplica: true, rol: 'info' }
-];
-
-function _sembrarCamposLibresDefecto() {
-    _CAMPOS_LIBRES_DEFECTO.forEach(function(d) {
-        var existe = State.convenio.camposLibres.some(function(c) {
-            return c.nombre === d.nombre;
-        });
-        if (!existe) {
-            State.convenio.camposLibres.push(
-                { nombre: d.nombre, valor: d.valor, noAplica: d.noAplica, rol: d.rol }
-            );
-        }
-    });
-}
-
 function restaurarEstado() {
     try {
         const raw = localStorage.getItem(LS_STATE_KEY);
@@ -319,8 +304,11 @@ function restaurarEstado() {
             State.staff.todos = saved.staff.todos;
             // activos se recalcula cuando se carga el módulo staff
         }
-        if (saved.dimensionamiento && saved.dimensionamiento.shrinkageMensual) {
-            State.dimensionamiento.shrinkageMensual = saved.dimensionamiento.shrinkageMensual;
+        if (saved.dimensionamiento) {
+            if (saved.dimensionamiento.shrinkageMensual)
+                State.dimensionamiento.shrinkageMensual = saved.dimensionamiento.shrinkageMensual;
+            if (saved.dimensionamiento.opciones)
+                Object.assign(State.dimensionamiento.opciones, saved.dimensionamiento.opciones);
         }
         if (saved.forecast) {
             if (saved.forecast.llamadas) State.forecast.llamadas = saved.forecast.llamadas;
@@ -333,8 +321,6 @@ function restaurarEstado() {
         } else {
             State.convenio.reglasExcepcion = [];
         }
-        // Añadir campos libres predefinidos que falten (migración no destructiva)
-        _sembrarCamposLibresDefecto();
         return true;
     } catch (e) {
         console.warn('[State] Error al restaurar estado:', e);
